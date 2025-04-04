@@ -29,10 +29,13 @@ func main() {
 	port := os.Getenv("PORT")
 
 	// Define the connection string
+
 	connStr := fmt.Sprintf(
-		"host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
-		dbHost, dbPort, dbUser, dbPassword, dbName,
+		"postgres://%s:%s@%s:%d/%s?sslmode=disable",
+		dbUser, dbPassword, dbHost, dbPort, dbName,
 	)
+
+	log.Println(connStr)
 
 	// Open database connection
 	db, err := sql.Open("postgres", connStr)

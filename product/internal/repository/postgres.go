@@ -2,7 +2,7 @@ package repository
 
 import (
 	"database/sql"
-	"errors"
+	"fmt"
 	"log/slog"
 	"product/internal/model"
 )
@@ -21,10 +21,9 @@ func New(l *slog.Logger, db *sql.DB) *Repository {
 
 func (r *Repository) CreateProduct(req model.CreateProductRequest) error {
 	query := `INSERT INTO products (name, description, price) VALUES ($1, $2, $3)`
-	var id int64
-	err := r.db.QueryRow(query, req.Name, req.Description, req.Price).Scan(&id)
+	_, err := r.db.Exec(query, req.Name, req.Description, req.Price)
 	if err != nil {
-		return errors.New("failed to insert product: " + err.Error())
+		return fmt.Errorf("could not insert product: %w", err)
 	}
 
 	return nil

@@ -18,6 +18,8 @@ services:
        - ./init-scripts:/docker-entrypoint-initdb.d
     ports:
        - "5432:5432"
+    networks:
+      - mynet
  
   adminer:
     image: adminer
