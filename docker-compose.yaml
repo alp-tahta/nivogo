@@ -15,9 +15,30 @@ services:
       retries: 10
     volumes:
        - pgdata:/var/lib/postgresql/data
-       - ./init-scripts:/docker-entrypoint-initdb.d
+       - ./product-init-scripts:/docker-entrypoint-initdb.d
     ports:
        - "5432:5432"
+    networks:
+      - mynet
+  
+  postgres-inventory:
+    image: postgres:17.4
+    container_name: postgres-inventory
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: example
+      POSTGRES_DB: inventory
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 1s
+      timeout: 5s
+      retries: 10
+    volumes:
+       - pgdata1:/var/lib/postgresql/data
+       - ./inventory-init-scripts:/docker-entrypoint-initdb.d
+    ports:
+       - "6432:5432"
     networks:
       - mynet
  
@@ -57,3 +78,4 @@ networks:
 
 volumes:
   pgdata:
+  pgdata1:
