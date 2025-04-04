@@ -45,6 +45,11 @@ services:
     deploy:
       restart_policy:
         condition: on-failure
+    develop:
+      watch:
+        - action: sync
+          path: .
+          target: /app
 
 networks:
   mynet:

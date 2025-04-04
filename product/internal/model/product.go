@@ -12,3 +12,9 @@ type CreateProductRequest struct {
 	Description string `json:"description"`
 	Price       int    `json:"price"`
 }
+
+type UpdateProductRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Price       int    `json:"price"`
+}

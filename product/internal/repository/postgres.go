@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"product/internal/model"
+	"strings"
 )
 
 type Repository struct {
@@ -42,23 +43,40 @@ func (r *Repository) GetProduct(id int) (*model.Product, error) {
 	return product, nil
 }
 
-func (r *Repository) UpdateProduct(id int, req model.CreateProductRequest) error {
-	query := `UPDATE products SET name = $1, description = $2, price = $3 WHERE id = $4`
-	result, err := r.db.Exec(query, req.Name, req.Description, req.Price, id)
+func (r *Repository) GetProducts(ids []int) ([]model.Product, error) {
+	if len(ids) == 0 {
+		return []model.Product{}, nil
+	}
+
+	// Build placeholders ($1, $2, ...) and arguments
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = id
+	}
+
+	query := fmt.Sprintf("SELECT id, name, price FROM products WHERE id IN (%s)", strings.Join(placeholders, ","))
+	rows, err := r.db.Query(query, args...)
 	if err != nil {
-		return fmt.Errorf("could not update product: %w", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var products []model.Product
+	for rows.Next() {
+		var p model.Product
+		if err := rows.Scan(&p.ID, &p.Name, &p.Price); err != nil {
+			return nil, err
+		}
+		products = append(products, p)
 	}
 
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("could not get rows affected: %w", err)
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
-	if rowsAffected == 0 {
-		return fmt.Errorf("product not found")
-	}
-
-	return nil
+	return products, nil
 }
 
 func (r *Repository) DeleteProduct(id int) error {

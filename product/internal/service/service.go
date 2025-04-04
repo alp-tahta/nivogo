@@ -22,7 +22,6 @@ func New(l *slog.Logger, r repository.RepositoryI) *Service {
 type ServiceI interface {
 	CreateProduct(req model.CreateProductRequest) error
 	GetProduct(id int) (*model.Product, error)
-	UpdateProduct(id int, req model.CreateProductRequest) error
 	DeleteProduct(id int) error
 }
 
@@ -50,19 +49,6 @@ func (s *Service) GetProduct(id int) (*model.Product, error) {
 
 	s.l.Info("product retrieved successfully", "id", id)
 	return product, nil
-}
-
-func (s *Service) UpdateProduct(id int, req model.CreateProductRequest) error {
-	s.l.Info("updating product", "id", id)
-
-	err := s.r.UpdateProduct(id, req)
-	if err != nil {
-		s.l.Error("failed to update product", "id", id, "error", err)
-		return fmt.Errorf("failed to update product: %w", err)
-	}
-
-	s.l.Info("product updated successfully", "id", id)
-	return nil
 }
 
 func (s *Service) DeleteProduct(id int) error {
