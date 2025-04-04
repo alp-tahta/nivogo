@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"product/internal/model"
 	"product/internal/service"
+	"strconv"
 )
 
 type Handler struct {
@@ -50,13 +51,80 @@ func (h *Handler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetProduct(w http.ResponseWriter, r *http.Request) {
+	idStr := r.URL.Query().Get("id")
+	if idStr == "" {
+		http.Error(w, "id parameter is required", http.StatusBadRequest)
+		return
+	}
 
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "invalid id parameter", http.StatusBadRequest)
+		return
+	}
+
+	product, err := h.s.GetProduct(id)
+	if err != nil {
+		h.l.Error("failed to get product", "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(product); err != nil {
+		h.l.Error("failed to encode response", "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 func (h *Handler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
+	idStr := r.URL.Query().Get("id")
+	if idStr == "" {
+		http.Error(w, "id parameter is required", http.StatusBadRequest)
+		return
+	}
 
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "invalid id parameter", http.StatusBadRequest)
+		return
+	}
+
+	productReq := new(model.CreateProductRequest)
+	if err := json.NewDecoder(r.Body).Decode(productReq); err != nil {
+		h.l.Error("failed to decode request body", "error", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := h.s.UpdateProduct(id, *productReq); err != nil {
+		h.l.Error("failed to update product", "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func (h *Handler) DeleteProduct(w http.ResponseWriter, r *http.Request) {
+	idStr := r.URL.Query().Get("id")
+	if idStr == "" {
+		http.Error(w, "id parameter is required", http.StatusBadRequest)
+		return
+	}
 
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "invalid id parameter", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.s.DeleteProduct(id); err != nil {
+		h.l.Error("failed to delete product", "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }

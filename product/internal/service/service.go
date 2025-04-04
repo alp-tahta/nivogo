@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"log/slog"
 	"product/internal/model"
 	"product/internal/repository"
@@ -20,22 +21,59 @@ func New(l *slog.Logger, r repository.RepositoryI) *Service {
 
 type ServiceI interface {
 	CreateProduct(req model.CreateProductRequest) error
-	GetProduct()
-	UpdateProduct()
-	DeleteProduct()
+	GetProduct(id int) (*model.Product, error)
+	UpdateProduct(id int, req model.CreateProductRequest) error
+	DeleteProduct(id int) error
 }
 
 func (s *Service) CreateProduct(req model.CreateProductRequest) error {
+	s.l.Info("creating new product", "name", req.Name)
+
 	err := s.r.CreateProduct(req)
 	if err != nil {
-		return err
+		s.l.Error("failed to create product", "error", err)
+		return fmt.Errorf("failed to create product: %w", err)
 	}
 
+	s.l.Info("product created successfully", "name", req.Name)
 	return nil
 }
 
-func (s *Service) GetProduct() {}
+func (s *Service) GetProduct(id int) (*model.Product, error) {
+	s.l.Info("getting product", "id", id)
 
-func (s *Service) UpdateProduct() {}
+	product, err := s.r.GetProduct(id)
+	if err != nil {
+		s.l.Error("failed to get product", "id", id, "error", err)
+		return nil, fmt.Errorf("failed to get product: %w", err)
+	}
 
-func (s *Service) DeleteProduct() {}
+	s.l.Info("product retrieved successfully", "id", id)
+	return product, nil
+}
+
+func (s *Service) UpdateProduct(id int, req model.CreateProductRequest) error {
+	s.l.Info("updating product", "id", id)
+
+	err := s.r.UpdateProduct(id, req)
+	if err != nil {
+		s.l.Error("failed to update product", "id", id, "error", err)
+		return fmt.Errorf("failed to update product: %w", err)
+	}
+
+	s.l.Info("product updated successfully", "id", id)
+	return nil
+}
+
+func (s *Service) DeleteProduct(id int) error {
+	s.l.Info("deleting product", "id", id)
+
+	err := s.r.DeleteProduct(id)
+	if err != nil {
+		s.l.Error("failed to delete product", "id", id, "error", err)
+		return fmt.Errorf("failed to delete product: %w", err)
+	}
+
+	s.l.Info("product deleted successfully", "id", id)
+	return nil
+}
