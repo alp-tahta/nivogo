@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"product/internal/model"
-	"strings"
 )
 
 type Repository struct {
@@ -48,32 +47,42 @@ func (r *Repository) GetProducts(ids []int) ([]model.Product, error) {
 		return []model.Product{}, nil
 	}
 
-	// Build placeholders ($1, $2, ...) and arguments
-	placeholders := make([]string, len(ids))
+	// Create a parameterized query with the correct number of placeholders
+	query := `SELECT id, name, description, price FROM products WHERE id IN (`
+	for i := range ids {
+		if i > 0 {
+			query += ","
+		}
+		query += fmt.Sprintf("$%d", i+1)
+	}
+	query += ")"
+
+	// Convert ids slice to interface{} slice for Exec
 	args := make([]interface{}, len(ids))
 	for i, id := range ids {
-		placeholders[i] = fmt.Sprintf("$%d", i+1)
 		args[i] = id
 	}
 
-	query := fmt.Sprintf("SELECT id, name, price FROM products WHERE id IN (%s)", strings.Join(placeholders, ","))
+	// Execute the query
 	rows, err := r.db.Query(query, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not query products: %w", err)
 	}
 	defer rows.Close()
 
+	// Process the results
 	var products []model.Product
 	for rows.Next() {
-		var p model.Product
-		if err := rows.Scan(&p.ID, &p.Name, &p.Price); err != nil {
-			return nil, err
+		var product model.Product
+		err := rows.Scan(&product.ID, &product.Name, &product.Description, &product.Price)
+		if err != nil {
+			return nil, fmt.Errorf("could not scan product: %w", err)
 		}
-		products = append(products, p)
+		products = append(products, product)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error iterating product rows: %w", err)
 	}
 
 	return products, nil
