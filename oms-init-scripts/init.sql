@@ -1,11 +1,9 @@
--- Create orders table
 CREATE TABLE IF NOT EXISTS orders (
     id SERIAL PRIMARY KEY,
     status VARCHAR(20) NOT NULL,
     created_at TIMESTAMP NOT NULL
 );
 
--- Create order_items table
 CREATE TABLE IF NOT EXISTS order_items (
     id SERIAL PRIMARY KEY,
     order_id INTEGER NOT NULL,
@@ -16,7 +14,6 @@ CREATE TABLE IF NOT EXISTS order_items (
     FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
 );
 
--- Create order_sagas table
 CREATE TABLE IF NOT EXISTS order_sagas (
     order_id INTEGER PRIMARY KEY,
     status VARCHAR(20) NOT NULL,

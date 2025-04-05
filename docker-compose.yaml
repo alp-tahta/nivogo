@@ -49,7 +49,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: example
-      POSTGRES_DB: inventory
+      POSTGRES_DB: oms
     healthcheck:
       test: ["CMD-SHELL", "pg_isready"]
       interval: 1s

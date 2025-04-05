@@ -24,7 +24,7 @@ func New(l *slog.Logger, r repository.RepositoryI) *Service {
 }
 
 type ServiceI interface {
-	CreateOrder(order model.Order) error
+	CreateOrder(order model.CreateOrder) error
 	CreateOrderFromRequest(req model.CreateOrderRequest) error
 	GetOrders() ([]model.Order, error)
 }
@@ -36,7 +36,7 @@ func (s *Service) CreateOrderFromRequest(req model.CreateOrderRequest) error {
 	}
 
 	// Create order from request
-	order := model.Order{
+	order := model.CreateOrder{
 		Items:     req.Items,
 		Status:    "CREATED",
 		CreatedAt: time.Now(),
@@ -46,7 +46,7 @@ func (s *Service) CreateOrderFromRequest(req model.CreateOrderRequest) error {
 	return s.CreateOrder(order)
 }
 
-func (s *Service) CreateOrder(order model.Order) error {
+func (s *Service) CreateOrder(order model.CreateOrder) error {
 	// Create order in database
 	err := s.r.CreateOrder(order)
 	if err != nil {
@@ -65,11 +65,11 @@ func (s *Service) CreateOrder(order model.Order) error {
 	if len(orders) == 0 {
 		return fmt.Errorf("failed to find created order")
 	}
-	order = orders[len(orders)-1]
+	createdOrder := orders[len(orders)-1]
 
 	// Start saga
 	saga := model.OrderSaga{
-		OrderID:   order.ID,
+		OrderID:   createdOrder.ID,
 		Status:    "STARTED",
 		Step:      0,
 		CreatedAt: time.Now(),
@@ -78,7 +78,7 @@ func (s *Service) CreateOrder(order model.Order) error {
 	// Save saga state
 	err = s.r.CreateSaga(saga)
 	if err != nil {
-		s.l.Error("failed to create saga", "error", err, "order_id", order.ID)
+		s.l.Error("failed to create saga", "error", err, "order_id", createdOrder.ID)
 		return fmt.Errorf("failed to create saga: %w", err)
 	}
 
@@ -105,7 +105,7 @@ func (s *Service) CreateOrder(order model.Order) error {
 	s.r.UpdateSagaStatus(saga.OrderID, "INVENTORY_RESERVED")
 
 	// Step 2: Create order items
-	err = s.r.CreateOrderItems(order.ID, order.Items)
+	err = s.r.CreateOrderItems(createdOrder.ID, order.Items)
 	if err != nil {
 		// Compensating transaction: Release all inventory
 		for _, item := range order.Items {

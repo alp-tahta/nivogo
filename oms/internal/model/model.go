@@ -20,6 +20,13 @@ type Order struct {
 	CreatedAt time.Time   `json:"created_at"`
 }
 
+// CreateOrder represents an order without an ID, used for creating new orders
+type CreateOrder struct {
+	Items     []OrderItem `json:"items"`
+	Status    string      `json:"status"`
+	CreatedAt time.Time   `json:"created_at"`
+}
+
 type CreateOrderRequest struct {
 	Items []OrderItem `json:"items"`
 }

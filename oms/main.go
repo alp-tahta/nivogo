@@ -17,11 +17,11 @@ import (
 )
 
 const (
-	dbHost     = "postgres-product"
+	dbHost     = "postgres-oms"
 	dbPort     = 5432
 	dbUser     = "postgres"
 	dbPassword = "example"
-	dbName     = "product"
+	dbName     = "oms"
 )
 
 func main() {
