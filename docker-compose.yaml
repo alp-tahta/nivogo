@@ -117,6 +117,30 @@ services:
           path: .
           target: /app
 
+  oms:
+    depends_on:
+      postgres-oms:
+        condition: service_healthy
+    build:
+      context: ./oms
+      dockerfile: Dockerfile.multistage
+    container_name: oms
+    hostname: oms
+    networks:
+      - mynet
+    environment:
+      PORT: :10081
+    ports:
+      - 10081:10081
+    deploy:
+      restart_policy:
+        condition: on-failure
+    develop:
+      watch:
+        - action: sync
+          path: .
+          target: /app
+
 networks:
   mynet:
     driver: bridge
