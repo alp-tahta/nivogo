@@ -19,7 +19,7 @@ func New(l *slog.Logger, db *sql.DB) *Repository {
 }
 
 type RepositoryI interface {
-	CreateOrder(order model.Order) (int, error)
+	CreateOrder(order model.Order) error
 	CreateOrderItems(orderID int, items []model.OrderItem) error
 	GetOrders() ([]model.Order, error)
 	GetOrderItems() (map[int][]model.OrderItem, error)
@@ -27,18 +27,17 @@ type RepositoryI interface {
 	UpdateSagaStatus(orderID int, status string) error
 }
 
-func (r *Repository) CreateOrder(order model.Order) (int, error) {
-	var id int
-	err := r.db.QueryRow(
-		"INSERT INTO orders (status, created_at) VALUES ($1, $2) RETURNING id",
+func (r *Repository) CreateOrder(order model.Order) error {
+	_, err := r.db.Exec(
+		"INSERT INTO orders (status, created_at) VALUES ($1, $2)",
 		order.Status, order.CreatedAt,
-	).Scan(&id)
+	)
 
 	if err != nil {
 		r.l.Error("failed to create order", "error", err)
-		return 0, err
+		return err
 	}
-	return id, nil
+	return nil
 }
 
 func (r *Repository) CreateOrderItems(orderID int, items []model.OrderItem) error {

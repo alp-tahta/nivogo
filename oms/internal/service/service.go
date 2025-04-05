@@ -47,15 +47,25 @@ func (s *Service) CreateOrderFromRequest(req model.CreateOrderRequest) error {
 }
 
 func (s *Service) CreateOrder(order model.Order) error {
-	// Create order in database to get the auto-generated ID
-	orderID, err := s.r.CreateOrder(order)
+	// Create order in database
+	err := s.r.CreateOrder(order)
 	if err != nil {
 		s.l.Error("failed to create order", "error", err)
 		return fmt.Errorf("failed to create order: %w", err)
 	}
 
-	// Update order with the generated ID
-	order.ID = orderID
+	// Get the created order to get its ID
+	orders, err := s.r.GetOrders()
+	if err != nil {
+		s.l.Error("failed to get orders", "error", err)
+		return fmt.Errorf("failed to get orders: %w", err)
+	}
+
+	// Find the most recently created order
+	if len(orders) == 0 {
+		return fmt.Errorf("failed to find created order")
+	}
+	order = orders[len(orders)-1]
 
 	// Start saga
 	saga := model.OrderSaga{
