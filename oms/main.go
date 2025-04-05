@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -330,37 +331,69 @@ func updateSagaStatus(db *sql.DB, orderID string, status string) {
 }
 
 func reserveInventory(productID string, quantity int) error {
+	// Create request body with quantity
+	requestBody := struct {
+		Quantity int `json:"quantity"`
+	}{
+		Quantity: quantity,
+	}
+
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return fmt.Errorf("stok rezervasyon isteği oluşturulamadı: %v", err)
+	}
+
 	// Call inventory service to reserve items
 	resp, err := http.Post(
 		fmt.Sprintf("http://inventory:8080/reserve/%s", productID),
 		"application/json",
-		nil,
+		bytes.NewBuffer(jsonBody),
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("stok rezervasyon isteği gönderilemedi: %v", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to reserve inventory: %s", resp.Status)
+		var errorResp ErrorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err == nil {
+			return fmt.Errorf("stok rezervasyonu başarısız: %s - %s", errorResp.Error, errorResp.Details)
+		}
+		return fmt.Errorf("stok rezervasyonu başarısız: %s", resp.Status)
 	}
 	return nil
 }
 
 func releaseInventory(productID string, quantity int) error {
+	// Create request body with quantity
+	requestBody := struct {
+		Quantity int `json:"quantity"`
+	}{
+		Quantity: quantity,
+	}
+
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return fmt.Errorf("stok serbest bırakma isteği oluşturulamadı: %v", err)
+	}
+
 	// Call inventory service to release items
 	resp, err := http.Post(
 		fmt.Sprintf("http://inventory:8080/release/%s", productID),
 		"application/json",
-		nil,
+		bytes.NewBuffer(jsonBody),
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("stok serbest bırakma isteği gönderilemedi: %v", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to release inventory: %s", resp.Status)
+		var errorResp ErrorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err == nil {
+			return fmt.Errorf("stok serbest bırakma başarısız: %s - %s", errorResp.Error, errorResp.Details)
+		}
+		return fmt.Errorf("stok serbest bırakma başarısız: %s", resp.Status)
 	}
 	return nil
 }
