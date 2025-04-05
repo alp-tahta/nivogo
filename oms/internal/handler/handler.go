@@ -22,6 +22,15 @@ func New(l *slog.Logger, s service.ServiceI) *Handler {
 	}
 }
 
+func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
+	_, err := w.Write([]byte("OK"))
+	if err != nil {
+		h.l.Error("Failed to write response", "error", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+}
+
 func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	var req model.CreateOrderRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
