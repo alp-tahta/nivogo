@@ -120,7 +120,15 @@ func (h *Handler) ReduceQuantityOfAProduct(w http.ResponseWriter, r *http.Reques
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+
 	amount := new(model.ReduceQuantityOfAProduct)
+	err = json.NewDecoder(r.Body).Decode(amount)
+	if err != nil {
+		h.l.Error(err.Error())
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	err = h.s.ReduceQuantityOfAProduct(id, *amount)
 	if err != nil {
 		h.l.Error(err.Error())

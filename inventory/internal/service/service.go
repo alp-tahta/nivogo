@@ -70,7 +70,7 @@ func (s *Service) ReduceQuantityOfAProduct(id int, a model.ReduceQuantityOfAProd
 		return fmt.Errorf("not enough quantity")
 	}
 
-	quantity.Quantity -= a.Amount
+	quantity.Quantity = quantity.Quantity - a.Amount
 
 	err = s.r.UpdateQuantityOfAProduct(id, quantity.Quantity)
 	if err != nil {
