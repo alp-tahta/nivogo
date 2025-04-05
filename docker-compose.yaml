@@ -41,6 +41,27 @@ services:
        - "6432:5432"
     networks:
       - mynet
+
+  postgres-oms:
+    image: postgres:17.4
+    container_name: postgres-oms
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: example
+      POSTGRES_DB: inventory
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 1s
+      timeout: 5s
+      retries: 10
+    volumes:
+       - pgdata2:/var/lib/postgresql/data
+       - ./oms-init-scripts:/docker-entrypoint-initdb.d
+    ports:
+       - "7432:5432"
+    networks:
+      - mynet
  
   adminer:
     image: adminer
@@ -103,3 +124,4 @@ networks:
 volumes:
   pgdata:
   pgdata1:
+  pgdata2:

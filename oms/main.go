@@ -70,8 +70,7 @@ func main() {
 	}
 	defer db.Close()
 
-	// Create tables if they don't exist
-	createTables(db)
+	// Tables are created by the init script in oms-init-scripts/init.sql
 
 	// HTTP server setup
 	mux := http.NewServeMux()
@@ -91,52 +90,6 @@ func main() {
 	log.Printf("Starting OMS service on port %s", port)
 	if err := http.ListenAndServe(":"+port, mux); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
-	}
-}
-
-func createTables(db *sql.DB) {
-	ordersTable := `
-		CREATE TABLE IF NOT EXISTS orders (
-			id VARCHAR(36) PRIMARY KEY,
-			status VARCHAR(20) NOT NULL,
-			created_at TIMESTAMP NOT NULL
-		);
-	`
-
-	orderItemsTable := `
-		CREATE TABLE IF NOT EXISTS order_items (
-			id SERIAL PRIMARY KEY,
-			order_id VARCHAR(36) NOT NULL,
-			product_id VARCHAR(36) NOT NULL,
-			product_name VARCHAR(255) NOT NULL,
-			product_description TEXT,
-			quantity INTEGER NOT NULL,
-			FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
-		);
-	`
-
-	sagaTable := `
-		CREATE TABLE IF NOT EXISTS order_sagas (
-			order_id VARCHAR(36) PRIMARY KEY,
-			status VARCHAR(20) NOT NULL,
-			step INTEGER NOT NULL,
-			created_at TIMESTAMP NOT NULL
-		);
-	`
-
-	_, err := db.Exec(ordersTable)
-	if err != nil {
-		log.Fatalf("Failed to create orders table: %v", err)
-	}
-
-	_, err = db.Exec(orderItemsTable)
-	if err != nil {
-		log.Fatalf("Failed to create order_items table: %v", err)
-	}
-
-	_, err = db.Exec(sagaTable)
-	if err != nil {
-		log.Fatalf("Failed to create saga table: %v", err)
 	}
 }
 
