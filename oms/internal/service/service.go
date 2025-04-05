@@ -75,7 +75,7 @@ func (s *Service) CreateOrder(order model.Order) error {
 	// Step 1: Reserve inventory for all items
 	for _, item := range order.Items {
 		if item.Quantity <= 0 {
-			return fmt.Errorf("invalid quantity for product %s", item.Product.ID)
+			return fmt.Errorf("invalid quantity for product %d", item.Product.ID)
 		}
 
 		if err := s.reserveInventory(item.Product.ID, item.Quantity); err != nil {
@@ -87,7 +87,7 @@ func (s *Service) CreateOrder(order model.Order) error {
 				s.releaseInventory(releasedItem.Product.ID, releasedItem.Quantity)
 			}
 			s.r.UpdateSagaStatus(saga.OrderID, "FAILED")
-			return fmt.Errorf("failed to reserve inventory for product %s: %w", item.Product.ID, err)
+			return fmt.Errorf("failed to reserve inventory for product %d: %w", item.Product.ID, err)
 		}
 	}
 
@@ -134,7 +134,7 @@ func (s *Service) GetOrders() ([]model.Order, error) {
 	return orders, nil
 }
 
-func (s *Service) reserveInventory(productID string, quantity int) error {
+func (s *Service) reserveInventory(productID int, quantity int) error {
 	// Create request body with quantity
 	requestBody := model.ReserveInventoryRequest{
 		Quantity: quantity,
@@ -147,7 +147,7 @@ func (s *Service) reserveInventory(productID string, quantity int) error {
 
 	// Call inventory service to reserve items
 	resp, err := http.Post(
-		fmt.Sprintf("http://inventory:9081/reserve/%s", productID),
+		fmt.Sprintf("http://inventory:9081/reserve/%d", productID),
 		"application/json",
 		bytes.NewBuffer(jsonBody),
 	)
@@ -166,7 +166,7 @@ func (s *Service) reserveInventory(productID string, quantity int) error {
 	return nil
 }
 
-func (s *Service) releaseInventory(productID string, quantity int) error {
+func (s *Service) releaseInventory(productID int, quantity int) error {
 	// Create request body with quantity
 	requestBody := model.ReleaseInventoryRequest{
 		Quantity: quantity,
@@ -179,7 +179,7 @@ func (s *Service) releaseInventory(productID string, quantity int) error {
 
 	// Call inventory service to release items
 	resp, err := http.Post(
-		fmt.Sprintf("http://inventory:9081/release/%s", productID),
+		fmt.Sprintf("http://inventory:9081/release/%d", productID),
 		"application/json",
 		bytes.NewBuffer(jsonBody),
 	)

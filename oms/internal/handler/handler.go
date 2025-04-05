@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"oms/internal/model"
 	"oms/internal/service"
-	"time"
 )
 
 type Handler struct {
@@ -76,9 +75,4 @@ func (h *Handler) sendError(w http.ResponseWriter, status int, message string, d
 		Code:    fmt.Sprintf("ERR_%d", status),
 		Details: detailsStr,
 	})
-}
-
-// Helper function to generate a unique order ID
-func generateOrderID() string {
-	return fmt.Sprintf("ORD-%d", time.Now().UnixNano())
 }
