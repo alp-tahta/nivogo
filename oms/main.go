@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"oms/internal/logger"
 	"oms/internal/repository"
 	"oms/internal/server"
@@ -15,38 +16,44 @@ import (
 	_ "github.com/lib/pq"
 )
 
+const (
+	dbHost     = "postgres-product"
+	dbPort     = 5432
+	dbUser     = "postgres"
+	dbPassword = "example"
+	dbName     = "product"
+)
+
 func main() {
+	port := os.Getenv("PORT")
 	// Initialize logger
 	l := logger.Init()
 
-	// Database connection parameters
-	dbHost := getEnv("DB_HOST", "localhost")
-	dbPort := getEnv("DB_PORT", "5432")
-	dbUser := getEnv("DB_USER", "postgres")
-	dbPass := getEnv("DB_PASSWORD", "postgres")
-	dbName := getEnv("DB_NAME", "oms")
-
 	// Connect to database
-	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		dbHost, dbPort, dbUser, dbPass, dbName)
+	connStr := fmt.Sprintf(
+		"postgres://%s:%s@%s:%d/%s?sslmode=disable",
+		dbUser, dbPassword, dbHost, dbPort, dbName,
+	)
+
+	log.Println(connStr)
+
+	// Open database connection
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
-		l.Error("failed to connect to database", "error", err)
-		os.Exit(1)
+		log.Fatalf("Failed to open database: %v", err)
+	}
+
+	// Ensure the connection is available
+	if err = db.Ping(); err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
 	}
 	defer db.Close()
-
-	// Test database connection
-	if err := db.Ping(); err != nil {
-		l.Error("failed to ping database", "error", err)
-		os.Exit(1)
-	}
 
 	// Initialize repository
 	repo := repository.New(l, db)
 
 	// Create server
-	srv := server.New(8080, repo)
+	srv := server.New(port, repo)
 
 	// Create context that listens for the interrupt signal from the OS
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -76,11 +83,4 @@ func main() {
 	}
 
 	l.Info("server exited properly")
-}
-
-func getEnv(key, fallback string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
-	}
-	return fallback
 }

@@ -25,10 +25,38 @@ func New(l *slog.Logger, r repository.RepositoryI) *Service {
 
 type ServiceI interface {
 	CreateOrder(order model.Order) error
+	CreateOrderFromRequest(req model.CreateOrderRequest) error
 	GetOrders() ([]model.Order, error)
 }
 
+func (s *Service) CreateOrderFromRequest(req model.CreateOrderRequest) error {
+	// Validate request
+	if len(req.Items) == 0 {
+		return fmt.Errorf("order must contain at least one item")
+	}
+
+	// Create order from request
+	order := model.Order{
+		Items:     req.Items,
+		Status:    "CREATED",
+		CreatedAt: time.Now(),
+	}
+
+	// Create order
+	return s.CreateOrder(order)
+}
+
 func (s *Service) CreateOrder(order model.Order) error {
+	// Create order in database to get the auto-generated ID
+	orderID, err := s.r.CreateOrder(order)
+	if err != nil {
+		s.l.Error("failed to create order", "error", err)
+		return fmt.Errorf("failed to create order: %w", err)
+	}
+
+	// Update order with the generated ID
+	order.ID = orderID
+
 	// Start saga
 	saga := model.OrderSaga{
 		OrderID:   order.ID,
@@ -38,7 +66,7 @@ func (s *Service) CreateOrder(order model.Order) error {
 	}
 
 	// Save saga state
-	err := s.r.CreateSaga(saga)
+	err = s.r.CreateSaga(saga)
 	if err != nil {
 		s.l.Error("failed to create saga", "error", err, "order_id", order.ID)
 		return fmt.Errorf("failed to create saga: %w", err)
@@ -66,17 +94,7 @@ func (s *Service) CreateOrder(order model.Order) error {
 	// Update saga step
 	s.r.UpdateSagaStatus(saga.OrderID, "INVENTORY_RESERVED")
 
-	// Step 2: Create order and order items
-	err = s.r.CreateOrder(order)
-	if err != nil {
-		// Compensating transaction: Release all inventory
-		for _, item := range order.Items {
-			s.releaseInventory(item.Product.ID, item.Quantity)
-		}
-		s.r.UpdateSagaStatus(saga.OrderID, "FAILED")
-		return fmt.Errorf("failed to create order: %w", err)
-	}
-
+	// Step 2: Create order items
 	err = s.r.CreateOrderItems(order.ID, order.Items)
 	if err != nil {
 		// Compensating transaction: Release all inventory
@@ -129,7 +147,7 @@ func (s *Service) reserveInventory(productID string, quantity int) error {
 
 	// Call inventory service to reserve items
 	resp, err := http.Post(
-		fmt.Sprintf("http://inventory:8080/reserve/%s", productID),
+		fmt.Sprintf("http://inventory:9081/reserve/%s", productID),
 		"application/json",
 		bytes.NewBuffer(jsonBody),
 	)
@@ -161,7 +179,7 @@ func (s *Service) releaseInventory(productID string, quantity int) error {
 
 	// Call inventory service to release items
 	resp, err := http.Post(
-		fmt.Sprintf("http://inventory:8080/release/%s", productID),
+		fmt.Sprintf("http://inventory:9081/release/%s", productID),
 		"application/json",
 		bytes.NewBuffer(jsonBody),
 	)

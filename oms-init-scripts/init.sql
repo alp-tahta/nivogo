@@ -1,6 +1,6 @@
 -- Create orders table
 CREATE TABLE IF NOT EXISTS orders (
-    id VARCHAR(36) PRIMARY KEY,
+    id SERIAL PRIMARY KEY,
     status VARCHAR(20) NOT NULL,
     created_at TIMESTAMP NOT NULL
 );
@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS orders (
 -- Create order_items table
 CREATE TABLE IF NOT EXISTS order_items (
     id SERIAL PRIMARY KEY,
-    order_id VARCHAR(36) NOT NULL,
+    order_id INTEGER NOT NULL,
     product_id VARCHAR(36) NOT NULL,
     product_name VARCHAR(255) NOT NULL,
     product_description TEXT,
@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS order_items (
 
 -- Create order_sagas table
 CREATE TABLE IF NOT EXISTS order_sagas (
-    order_id VARCHAR(36) PRIMARY KEY,
+    order_id INTEGER PRIMARY KEY,
     status VARCHAR(20) NOT NULL,
     step INTEGER NOT NULL,
     created_at TIMESTAMP NOT NULL

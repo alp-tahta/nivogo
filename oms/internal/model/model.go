@@ -14,14 +14,18 @@ type OrderItem struct {
 }
 
 type Order struct {
-	ID        string      `json:"id"`
+	ID        int         `json:"id"`
 	Items     []OrderItem `json:"items"`
 	Status    string      `json:"status"`
 	CreatedAt time.Time   `json:"created_at"`
 }
 
+type CreateOrderRequest struct {
+	Items []OrderItem `json:"items"`
+}
+
 type OrderSaga struct {
-	OrderID   string
+	OrderID   int
 	Status    string
 	Step      int
 	CreatedAt time.Time

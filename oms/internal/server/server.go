@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"oms/internal/handler"
@@ -18,7 +17,7 @@ type Server struct {
 	logger *slog.Logger
 }
 
-func New(port int, db *repository.Repository) *Server {
+func New(port string, db *repository.Repository) *Server {
 	// Initialize logger
 	l := logger.Init()
 
@@ -33,7 +32,7 @@ func New(port int, db *repository.Repository) *Server {
 
 	// Create server
 	srv := &http.Server{
-		Addr:         fmt.Sprintf(":%d", port),
+		Addr:         port,
 		Handler:      router,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,

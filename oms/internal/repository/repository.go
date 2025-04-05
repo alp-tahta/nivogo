@@ -19,27 +19,29 @@ func New(l *slog.Logger, db *sql.DB) *Repository {
 }
 
 type RepositoryI interface {
-	CreateOrder(order model.Order) error
-	CreateOrderItems(orderID string, items []model.OrderItem) error
+	CreateOrder(order model.Order) (int, error)
+	CreateOrderItems(orderID int, items []model.OrderItem) error
 	GetOrders() ([]model.Order, error)
-	GetOrderItems() (map[string][]model.OrderItem, error)
+	GetOrderItems() (map[int][]model.OrderItem, error)
 	CreateSaga(saga model.OrderSaga) error
-	UpdateSagaStatus(orderID string, status string) error
+	UpdateSagaStatus(orderID int, status string) error
 }
 
-func (r *Repository) CreateOrder(order model.Order) error {
-	_, err := r.db.Exec(
-		"INSERT INTO orders (id, status, created_at) VALUES ($1, $2, $3)",
-		order.ID, order.Status, order.CreatedAt,
-	)
+func (r *Repository) CreateOrder(order model.Order) (int, error) {
+	var id int
+	err := r.db.QueryRow(
+		"INSERT INTO orders (status, created_at) VALUES ($1, $2) RETURNING id",
+		order.Status, order.CreatedAt,
+	).Scan(&id)
+
 	if err != nil {
-		r.l.Error("failed to create order", "error", err, "order_id", order.ID)
-		return err
+		r.l.Error("failed to create order", "error", err)
+		return 0, err
 	}
-	return nil
+	return id, nil
 }
 
-func (r *Repository) CreateOrderItems(orderID string, items []model.OrderItem) error {
+func (r *Repository) CreateOrderItems(orderID int, items []model.OrderItem) error {
 	for _, item := range items {
 		_, err := r.db.Exec(
 			"INSERT INTO order_items (order_id, product_id, product_name, product_description, quantity) VALUES ($1, $2, $3, $4, $5)",
@@ -74,7 +76,7 @@ func (r *Repository) GetOrders() ([]model.Order, error) {
 	return orders, nil
 }
 
-func (r *Repository) GetOrderItems() (map[string][]model.OrderItem, error) {
+func (r *Repository) GetOrderItems() (map[int][]model.OrderItem, error) {
 	rows, err := r.db.Query("SELECT order_id, product_id, product_name, product_description, quantity FROM order_items")
 	if err != nil {
 		r.l.Error("failed to get order items", "error", err)
@@ -82,9 +84,9 @@ func (r *Repository) GetOrderItems() (map[string][]model.OrderItem, error) {
 	}
 	defer rows.Close()
 
-	orderItems := make(map[string][]model.OrderItem)
+	orderItems := make(map[int][]model.OrderItem)
 	for rows.Next() {
-		var orderID string
+		var orderID int
 		var item model.OrderItem
 		err := rows.Scan(&orderID, &item.Product.ID, &item.Product.Name, &item.Product.Description, &item.Quantity)
 		if err != nil {
@@ -108,7 +110,7 @@ func (r *Repository) CreateSaga(saga model.OrderSaga) error {
 	return nil
 }
 
-func (r *Repository) UpdateSagaStatus(orderID string, status string) error {
+func (r *Repository) UpdateSagaStatus(orderID int, status string) error {
 	_, err := r.db.Exec("UPDATE order_sagas SET status = $1 WHERE order_id = $2", status, orderID)
 	if err != nil {
 		r.l.Error("failed to update saga status", "error", err, "order_id", orderID)
