@@ -152,7 +152,7 @@ services:
     depends_on:
       - product
     environment:
-      - REACT_APP_API_URL=http://product:8081
+      - REACT_APP_API_URL=http://localhost:8081
 
 networks:
   mynet:
