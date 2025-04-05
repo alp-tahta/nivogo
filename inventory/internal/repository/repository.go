@@ -6,4 +6,5 @@ type RepositoryI interface {
 	CreateInventory(req model.CreateInventoryRequest) error
 	GetQuantityOfAProduct(id int) (*model.QuantityOfAProduct, error)
 	GetQuantityOfProducts(ids []int) ([]model.Inventory, error)
+	UpdateQuantityOfAProduct(id, amount int) error
 }

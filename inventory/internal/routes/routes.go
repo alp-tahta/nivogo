@@ -10,4 +10,5 @@ func RegisterRoutes(mux *http.ServeMux, h *handler.Handler) {
 	mux.HandleFunc("POST /inventory", h.CreateInventory)
 	mux.HandleFunc("GET /inventory/{id}", h.GetQuantityOfAProduct)
 	mux.HandleFunc("GET /inventory", h.GetQuantityOfProducts)
+	mux.HandleFunc("POST /inventory/product/{id}/reduce", h.ReduceQuantityOfAProduct)
 }

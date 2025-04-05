@@ -87,3 +87,12 @@ func (r *Repository) GetQuantityOfProducts(ids []int) ([]model.Inventory, error)
 
 	return products, nil
 }
+
+func (r *Repository) UpdateQuantityOfAProduct(id, amount int) error {
+	query := `UPDATE inventory SET quantity = $1 WHERE product_id = $2`
+	_, err := r.db.Exec(query, amount, id)
+	if err != nil {
+		return fmt.Errorf("could not update product: %w", err)
+	}
+	return nil
+}

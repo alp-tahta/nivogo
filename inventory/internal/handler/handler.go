@@ -111,3 +111,21 @@ func (h *Handler) GetQuantityOfProducts(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 }
+
+func (h *Handler) ReduceQuantityOfAProduct(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		h.l.Error(err.Error())
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	amount := new(model.ReduceQuantityOfAProduct)
+	err = h.s.ReduceQuantityOfAProduct(id, *amount)
+	if err != nil {
+		h.l.Error(err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}

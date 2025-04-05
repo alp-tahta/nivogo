@@ -14,3 +14,7 @@ type QuantityOfAProduct struct {
 	ProductID int `json:"product_id"`
 	Quantity  int `json:"quantity"`
 }
+
+type ReduceQuantityOfAProduct struct {
+	Amount int `json:"amount"`
+}
