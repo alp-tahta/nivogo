@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS inventory (
-    product_id integer NOT NULL,
+    product_id integer NOT NULL UNIQUE,
     quantity integer NOT NULL
 );
 
