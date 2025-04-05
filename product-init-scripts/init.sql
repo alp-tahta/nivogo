@@ -8,6 +8,6 @@ CREATE TABLE IF NOT EXISTS products (
 CREATE INDEX ON products (id);
 
 INSERT INTO products (name, description, price) VALUES 
-    ('test1', 'description1',10),
-    ('test2', 'description2',20);
+    ('Bird s Nest Fern', 'The Bird s Nest Fern is a tropical plant known for its vibrant green, wavy fronds...',22),
+    ('Ctenanthe', 'The Ctenanthe, also known as the Prayer Plant, is a stunning tropical plant with bold...',45);
 
