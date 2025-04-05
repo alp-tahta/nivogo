@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import CartItem from './CartItem';
 import '../styles/Cart.css';
 
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8081';
+
 const Cart = () => {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -10,7 +12,7 @@ const Cart = () => {
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        const response = await fetch('http://localhost:8081/product?ids=1,2');
+        const response = await fetch(`${API_URL}/product?ids=1,2`);
         if (!response.ok) {
           throw new Error('Failed to fetch products');
         }
