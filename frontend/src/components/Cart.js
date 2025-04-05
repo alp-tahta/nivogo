@@ -1,26 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import CartItem from './CartItem';
 import '../styles/Cart.css';
 
 const Cart = () => {
-  const [items, setItems] = useState([
-    {
-      id: 1,
-      name: "Bird's Nest Fern",
-      price: 22.00,
-      description: "The Bird's Nest Fern is a tropical plant known for its vibrant green, wavy fronds...",
-      image: "/images/birds-nest-fern.jpg",
-      quantity: 3
-    },
-    {
-      id: 2,
-      name: "Ctenanthe",
-      price: 45.00,
-      description: "The Ctenanthe, also known as the Prayer Plant, is a stunning tropical plant with bold...",
-      image: "/images/ctenanthe.jpg",
-      quantity: 1
-    }
-  ]);
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const response = await fetch('http://localhost:8081/product?ids=1,2');
+        if (!response.ok) {
+          throw new Error('Failed to fetch products');
+        }
+        const products = await response.json();
+        // Initialize products with quantity 1
+        setItems(products.map(product => ({
+          ...product,
+          quantity: 1
+        })));
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProducts();
+  }, []);
 
   const handleQuantityChange = (id, newQuantity) => {
     if (newQuantity < 1) return;
@@ -38,6 +46,14 @@ const Cart = () => {
   };
 
   const subtotal = calculateSubtotal();
+
+  if (loading) {
+    return <div className="cart-container">Loading...</div>;
+  }
+
+  if (error) {
+    return <div className="cart-container">Error: {error}</div>;
+  }
 
   return (
     <div className="cart-container">
