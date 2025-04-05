@@ -1,20 +1,56 @@
 package server
 
 import (
+	"context"
+	"fmt"
+	"log/slog"
 	"net/http"
+	"oms/internal/handler"
+	"oms/internal/logger"
+	"oms/internal/repository"
+	"oms/internal/routes"
+	"oms/internal/service"
 	"time"
 )
 
-func Init(port string, mux *http.ServeMux) error {
-	srv := http.Server{
-		Addr:              port,
-		Handler:           mux,
-		ReadTimeout:       1 * time.Second,
-		ReadHeaderTimeout: 1 * time.Second,
-		WriteTimeout:      1 * time.Second,
-		IdleTimeout:       5 * time.Second,
+type Server struct {
+	server *http.Server
+	logger *slog.Logger
+}
+
+func New(port int, db *repository.Repository) *Server {
+	// Initialize logger
+	l := logger.Init()
+
+	// Initialize service
+	s := service.New(l, db)
+
+	// Initialize handler
+	h := handler.New(l, s)
+
+	// Initialize router
+	router := routes.RegisterRoutes(h)
+
+	// Create server
+	srv := &http.Server{
+		Addr:         fmt.Sprintf(":%d", port),
+		Handler:      router,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
 	}
 
-	err := srv.ListenAndServe()
-	return err
+	return &Server{
+		server: srv,
+		logger: l,
+	}
+}
+
+func (s *Server) Start() error {
+	s.logger.Info("starting server", "addr", s.server.Addr)
+	return s.server.ListenAndServe()
+}
+
+func (s *Server) Shutdown(ctx context.Context) error {
+	s.logger.Info("shutting down server")
+	return s.server.Shutdown(ctx)
 }

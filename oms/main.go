@@ -1,362 +1,86 @@
 package main
 
 import (
-	"bytes"
+	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
-	"log"
-	"net/http"
+	"oms/internal/logger"
+	"oms/internal/repository"
+	"oms/internal/server"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	_ "github.com/lib/pq"
 )
 
-const (
-	dbHost     = "postgres-oms"
-	dbPort     = 5432
-	dbUser     = "postgres"
-	dbPassword = "example"
-	dbName     = "oms"
-)
-
-type Product struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-}
-
-type OrderItem struct {
-	Product  Product `json:"product"`
-	Quantity int     `json:"quantity"`
-}
-
-type Order struct {
-	ID        string      `json:"id"`
-	Items     []OrderItem `json:"items"`
-	Status    string      `json:"status"`
-	CreatedAt time.Time   `json:"created_at"`
-}
-
-type OrderSaga struct {
-	OrderID   string
-	Status    string
-	Step      int
-	CreatedAt time.Time
-}
-
-type ErrorResponse struct {
-	Error   string `json:"error"`
-	Code    string `json:"code"`
-	Details string `json:"details,omitempty"`
-}
-
 func main() {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
+	// Initialize logger
+	l := logger.Init()
 
-	// Database connection
-	connStr := fmt.Sprintf(
-		"postgres://%s:%s@%s:%d/%s?sslmode=disable",
-		dbUser, dbPassword, dbHost, dbPort, dbName,
-	)
+	// Database connection parameters
+	dbHost := getEnv("DB_HOST", "localhost")
+	dbPort := getEnv("DB_PORT", "5432")
+	dbUser := getEnv("DB_USER", "postgres")
+	dbPass := getEnv("DB_PASSWORD", "postgres")
+	dbName := getEnv("DB_NAME", "oms")
 
+	// Connect to database
+	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		dbHost, dbPort, dbUser, dbPass, dbName)
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
-		log.Fatalf("Failed to open database: %v", err)
+		l.Error("failed to connect to database", "error", err)
+		os.Exit(1)
 	}
 	defer db.Close()
 
-	// Tables are created by the init script in oms-init-scripts/init.sql
-
-	// HTTP server setup
-	mux := http.NewServeMux()
-
-	// Order endpoints
-	mux.HandleFunc("/orders", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodPost:
-			handleCreateOrder(w, r, db)
-		case http.MethodGet:
-			handleGetOrders(w, r, db)
-		default:
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	})
-
-	log.Printf("Starting OMS service on port %s", port)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+	// Test database connection
+	if err := db.Ping(); err != nil {
+		l.Error("failed to ping database", "error", err)
+		os.Exit(1)
 	}
+
+	// Initialize repository
+	repo := repository.New(l, db)
+
+	// Create server
+	srv := server.New(8080, repo)
+
+	// Create context that listens for the interrupt signal from the OS
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	// Start server in a goroutine
+	go func() {
+		if err := srv.Start(); err != nil {
+			l.Error("server error", "error", err)
+		}
+	}()
+
+	// Listen for the interrupt signal
+	<-ctx.Done()
+
+	// Restore default behavior on the interrupt signal and notify user of shutdown
+	stop()
+	l.Info("shutting down gracefully, press Ctrl+C again to force")
+
+	// Create shutdown context with 10 second timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Shutdown the server
+	if err := srv.Shutdown(ctx); err != nil {
+		l.Error("server forced to shutdown", "error", err)
+	}
+
+	l.Info("server exited properly")
 }
 
-func handleCreateOrder(w http.ResponseWriter, r *http.Request, db *sql.DB) {
-	var order Order
-	if err := json.NewDecoder(r.Body).Decode(&order); err != nil {
-		sendError(w, http.StatusBadRequest, "INVALID_REQUEST", "Geçersiz istek formatı", "İstek gövdesi JSON formatında olmalıdır")
-		return
+func getEnv(key, fallback string) string {
+	if value, exists := os.LookupEnv(key); exists {
+		return value
 	}
-
-	// Validate order
-	if order.ID == "" {
-		sendError(w, http.StatusBadRequest, "MISSING_ORDER_ID", "Sipariş ID'si eksik", "Sipariş ID'si boş olamaz")
-		return
-	}
-
-	if len(order.Items) == 0 {
-		sendError(w, http.StatusBadRequest, "EMPTY_ORDER", "Sipariş boş", "Sipariş en az bir ürün içermelidir")
-		return
-	}
-
-	// Start saga
-	saga := OrderSaga{
-		OrderID:   order.ID,
-		Status:    "STARTED",
-		Step:      0,
-		CreatedAt: time.Now(),
-	}
-
-	// Save saga state
-	_, err := db.Exec(
-		"INSERT INTO order_sagas (order_id, status, step, created_at) VALUES ($1, $2, $3, $4)",
-		saga.OrderID, saga.Status, saga.Step, saga.CreatedAt,
-	)
-	if err != nil {
-		sendError(w, http.StatusInternalServerError, "SAGA_CREATION_FAILED", "Saga oluşturulamadı", "Sipariş işlemi başlatılamadı")
-		return
-	}
-
-	// Step 1: Reserve inventory for all items
-	for _, item := range order.Items {
-		if item.Quantity <= 0 {
-			sendError(w, http.StatusBadRequest, "INVALID_QUANTITY", "Geçersiz miktar",
-				fmt.Sprintf("Ürün ID: %s için miktar 0'dan büyük olmalıdır", item.Product.ID))
-			return
-		}
-
-		if err := reserveInventory(item.Product.ID, item.Quantity); err != nil {
-			// Compensating transaction: Release all previously reserved inventory
-			for _, releasedItem := range order.Items {
-				if releasedItem.Product.ID == item.Product.ID {
-					break // Skip the current item as it wasn't reserved
-				}
-				releaseInventory(releasedItem.Product.ID, releasedItem.Quantity)
-			}
-			updateSagaStatus(db, saga.OrderID, "FAILED")
-			sendError(w, http.StatusInternalServerError, "INVENTORY_RESERVATION_FAILED",
-				"Stok rezervasyonu başarısız",
-				fmt.Sprintf("Ürün ID: %s için %d adet stok rezerve edilemedi", item.Product.ID, item.Quantity))
-			return
-		}
-	}
-
-	// Update saga step
-	updateSagaStatus(db, saga.OrderID, "INVENTORY_RESERVED")
-
-	// Step 2: Create order and order items
-	tx, err := db.Begin()
-	if err != nil {
-		// Compensating transaction: Release all inventory
-		for _, item := range order.Items {
-			releaseInventory(item.Product.ID, item.Quantity)
-		}
-		updateSagaStatus(db, saga.OrderID, "FAILED")
-		sendError(w, http.StatusInternalServerError, "TRANSACTION_FAILED", "İşlem başlatılamadı",
-			"Veritabanı işlemi başlatılamadı")
-		return
-	}
-
-	// Insert order
-	_, err = tx.Exec(
-		"INSERT INTO orders (id, status, created_at) VALUES ($1, $2, $3)",
-		order.ID, "CREATED", time.Now(),
-	)
-	if err != nil {
-		tx.Rollback()
-		// Compensating transaction: Release all inventory
-		for _, item := range order.Items {
-			releaseInventory(item.Product.ID, item.Quantity)
-		}
-		updateSagaStatus(db, saga.OrderID, "FAILED")
-		sendError(w, http.StatusInternalServerError, "ORDER_CREATION_FAILED", "Sipariş oluşturulamadı",
-			"Sipariş veritabanına kaydedilemedi")
-		return
-	}
-
-	// Insert order items
-	for _, item := range order.Items {
-		_, err = tx.Exec(
-			"INSERT INTO order_items (order_id, product_id, product_name, product_description, quantity) VALUES ($1, $2, $3, $4, $5)",
-			order.ID, item.Product.ID, item.Product.Name, item.Product.Description, item.Quantity,
-		)
-		if err != nil {
-			tx.Rollback()
-			// Compensating transaction: Release all inventory
-			for _, releaseItem := range order.Items {
-				releaseInventory(releaseItem.Product.ID, releaseItem.Quantity)
-			}
-			updateSagaStatus(db, saga.OrderID, "FAILED")
-			sendError(w, http.StatusInternalServerError, "ORDER_ITEM_CREATION_FAILED", "Sipariş kalemi oluşturulamadı",
-				fmt.Sprintf("Ürün ID: %s için sipariş kalemi kaydedilemedi", item.Product.ID))
-			return
-		}
-	}
-
-	if err = tx.Commit(); err != nil {
-		tx.Rollback()
-		// Compensating transaction: Release all inventory
-		for _, item := range order.Items {
-			releaseInventory(item.Product.ID, item.Quantity)
-		}
-		updateSagaStatus(db, saga.OrderID, "FAILED")
-		sendError(w, http.StatusInternalServerError, "TRANSACTION_COMMIT_FAILED", "İşlem tamamlanamadı",
-			"Veritabanı işlemi tamamlanamadı")
-		return
-	}
-
-	// Update saga status to completed
-	updateSagaStatus(db, saga.OrderID, "COMPLETED")
-
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(order)
-}
-
-func handleGetOrders(w http.ResponseWriter, r *http.Request, db *sql.DB) {
-	// First, get all orders
-	orderRows, err := db.Query("SELECT id, status, created_at FROM orders")
-	if err != nil {
-		sendError(w, http.StatusInternalServerError, "ORDER_FETCH_FAILED", "Siparişler getirilemedi",
-			"Veritabanından siparişler alınamadı")
-		return
-	}
-	defer orderRows.Close()
-
-	var orders []Order
-	orderMap := make(map[string]*Order)
-
-	for orderRows.Next() {
-		var order Order
-		err := orderRows.Scan(&order.ID, &order.Status, &order.CreatedAt)
-		if err != nil {
-			sendError(w, http.StatusInternalServerError, "ORDER_SCAN_FAILED", "Sipariş verisi okunamadı",
-				"Sipariş verisi veritabanından okunamadı")
-			return
-		}
-		orders = append(orders, order)
-		orderMap[order.ID] = &orders[len(orders)-1]
-	}
-
-	// Then, get all order items
-	itemRows, err := db.Query("SELECT order_id, product_id, product_name, product_description, quantity FROM order_items")
-	if err != nil {
-		sendError(w, http.StatusInternalServerError, "ORDER_ITEMS_FETCH_FAILED", "Sipariş kalemleri getirilemedi",
-			"Veritabanından sipariş kalemleri alınamadı")
-		return
-	}
-	defer itemRows.Close()
-
-	for itemRows.Next() {
-		var orderID string
-		var item OrderItem
-		err := itemRows.Scan(&orderID, &item.Product.ID, &item.Product.Name, &item.Product.Description, &item.Quantity)
-		if err != nil {
-			sendError(w, http.StatusInternalServerError, "ORDER_ITEM_SCAN_FAILED", "Sipariş kalemi verisi okunamadı",
-				"Sipariş kalemi verisi veritabanından okunamadı")
-			return
-		}
-		if order, exists := orderMap[orderID]; exists {
-			order.Items = append(order.Items, item)
-		}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(orders)
-}
-
-func updateSagaStatus(db *sql.DB, orderID string, status string) {
-	_, err := db.Exec("UPDATE order_sagas SET status = $1 WHERE order_id = $2", status, orderID)
-	if err != nil {
-		log.Printf("Failed to update saga status: %v", err)
-	}
-}
-
-func reserveInventory(productID string, quantity int) error {
-	// Create request body with quantity
-	requestBody := struct {
-		Quantity int `json:"quantity"`
-	}{
-		Quantity: quantity,
-	}
-
-	jsonBody, err := json.Marshal(requestBody)
-	if err != nil {
-		return fmt.Errorf("stok rezervasyon isteği oluşturulamadı: %v", err)
-	}
-
-	// Call inventory service to reserve items
-	resp, err := http.Post(
-		fmt.Sprintf("http://inventory:8080/reserve/%s", productID),
-		"application/json",
-		bytes.NewBuffer(jsonBody),
-	)
-	if err != nil {
-		return fmt.Errorf("stok rezervasyon isteği gönderilemedi: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		var errorResp ErrorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err == nil {
-			return fmt.Errorf("stok rezervasyonu başarısız: %s - %s", errorResp.Error, errorResp.Details)
-		}
-		return fmt.Errorf("stok rezervasyonu başarısız: %s", resp.Status)
-	}
-	return nil
-}
-
-func releaseInventory(productID string, quantity int) error {
-	// Create request body with quantity
-	requestBody := struct {
-		Quantity int `json:"quantity"`
-	}{
-		Quantity: quantity,
-	}
-
-	jsonBody, err := json.Marshal(requestBody)
-	if err != nil {
-		return fmt.Errorf("stok serbest bırakma isteği oluşturulamadı: %v", err)
-	}
-
-	// Call inventory service to release items
-	resp, err := http.Post(
-		fmt.Sprintf("http://inventory:8080/release/%s", productID),
-		"application/json",
-		bytes.NewBuffer(jsonBody),
-	)
-	if err != nil {
-		return fmt.Errorf("stok serbest bırakma isteği gönderilemedi: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		var errorResp ErrorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err == nil {
-			return fmt.Errorf("stok serbest bırakma başarısız: %s - %s", errorResp.Error, errorResp.Details)
-		}
-		return fmt.Errorf("stok serbest bırakma başarısız: %s", resp.Status)
-	}
-	return nil
-}
-
-func sendError(w http.ResponseWriter, status int, code string, message string, details string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(ErrorResponse{
-		Error:   message,
-		Code:    code,
-		Details: details,
-	})
+	return fallback
 }
