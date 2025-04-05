@@ -72,6 +72,30 @@ services:
           path: .
           target: /app
 
+  inventory:
+    depends_on:
+      postgres-inventory:
+        condition: service_healthy
+    build:
+      context: ./inventory
+      dockerfile: Dockerfile.multistage
+    container_name: inventory
+    hostname: inventory
+    networks:
+      - mynet
+    environment:
+      PORT: :9081
+    ports:
+      - 9081:9081
+    deploy:
+      restart_policy:
+        condition: on-failure
+    develop:
+      watch:
+        - action: sync
+          path: .
+          target: /app
+
 networks:
   mynet:
     driver: bridge

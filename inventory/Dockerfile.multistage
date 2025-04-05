@@ -19,7 +19,7 @@ WORKDIR /
 
 COPY --from=build-stage /inventory /inventory
 
-EXPOSE 8080
+EXPOSE 9081
 
 USER nonroot:nonroot
 

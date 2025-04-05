@@ -22,6 +22,7 @@ func New(l *slog.Logger, r repository.RepositoryI) *Service {
 type ServiceI interface {
 	CreateInventory(req model.CreateInventoryRequest) error
 	GetQuantityOfAProduct(id int) (*model.QuantityOfAProduct, error)
+	GetQuantityOfProducts(ids []int) ([]model.Inventory, error)
 }
 
 func (s *Service) CreateInventory(req model.CreateInventoryRequest) error {
@@ -42,4 +43,17 @@ func (s *Service) GetQuantityOfAProduct(id int) (*model.QuantityOfAProduct, erro
 	}
 
 	return quantity, nil
+}
+
+func (s *Service) GetQuantityOfProducts(ids []int) ([]model.Inventory, error) {
+	s.l.Info("getting quantities", "ids", ids)
+
+	products, err := s.r.GetQuantityOfProducts(ids)
+	if err != nil {
+		s.l.Error("failed to get quantities", "ids", ids, "error", err)
+		return nil, fmt.Errorf("failed to get quantities: %w", err)
+	}
+
+	s.l.Info("quantities retrieved successfully", "count", len(products))
+	return products, nil
 }

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 type Handler struct {
@@ -64,13 +65,49 @@ func (h *Handler) GetQuantityOfAProduct(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
 	err = json.NewEncoder(w).Encode(quantity)
 	if err != nil {
 		h.l.Error(err.Error())
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	h.l.Info("Successfully retrieved quantity of product", "product_id", id, "quantity", quantity.Quantity)
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+	h.l.Info("Successfully retrieved quantity of product", "product_id", id, "quantity", quantity.Quantity)
+}
+
+func (h *Handler) GetQuantityOfProducts(w http.ResponseWriter, r *http.Request) {
+	// Get IDs from query parameters
+	idsParam := r.URL.Query().Get("ids")
+	if idsParam == "" {
+		http.Error(w, "ids parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	// Parse the comma-separated IDs
+	var ids []int
+	for _, idStr := range strings.Split(idsParam, ",") {
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			http.Error(w, "invalid id in ids parameter", http.StatusBadRequest)
+			return
+		}
+		ids = append(ids, id)
+	}
+
+	// Get products from service
+	products, err := h.s.GetQuantityOfProducts(ids)
+	if err != nil {
+		h.l.Error("failed to get products", "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Return products as JSON
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(products); err != nil {
+		h.l.Error("failed to encode response", "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
