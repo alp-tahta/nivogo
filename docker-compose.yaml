@@ -1,4 +1,3 @@
-
 services:
   postgres-product:
     image: postgres:17.4
@@ -140,6 +139,20 @@ services:
         - action: sync
           path: .
           target: /app
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: frontend
+    ports:
+      - "3000:3000"
+    networks:
+      - mynet
+    depends_on:
+      - product
+    environment:
+      - REACT_APP_API_URL=http://product:8081
 
 networks:
   mynet:
