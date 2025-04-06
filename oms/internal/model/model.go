@@ -44,10 +44,19 @@ type ErrorResponse struct {
 	Details string `json:"details,omitempty"`
 }
 
+// Kafka-related models
 type ReserveInventoryRequest struct {
-	Quantity int `json:"quantity"`
+	ProductID int `json:"product_id"`
+	Quantity  int `json:"quantity"`
 }
 
 type ReleaseInventoryRequest struct {
-	Quantity int `json:"quantity"`
+	ProductID int `json:"product_id"`
+	Quantity  int `json:"quantity"`
+}
+
+type InventoryResponse struct {
+	ProductID int    `json:"product_id"`
+	Success   bool   `json:"success"`
+	Error     string `json:"error,omitempty"`
 }

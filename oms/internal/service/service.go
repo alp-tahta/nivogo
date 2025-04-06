@@ -1,11 +1,9 @@
 package service
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/http"
+	"oms/internal/kafka"
 	"oms/internal/model"
 	"oms/internal/repository"
 	"time"
@@ -14,19 +12,31 @@ import (
 type Service struct {
 	l *slog.Logger
 	r repository.RepositoryI
+	k *kafka.KafkaClient
 }
 
-func New(l *slog.Logger, r repository.RepositoryI) *Service {
+func New(l *slog.Logger, r repository.RepositoryI) (*Service, error) {
+	k, err := kafka.New(l)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Kafka client: %w", err)
+	}
+
 	return &Service{
 		l: l,
 		r: r,
-	}
+		k: k,
+	}, nil
 }
 
 type ServiceI interface {
 	CreateOrder(order model.CreateOrder) (int, error)
 	CreateOrderFromRequest(req model.CreateOrderRequest) error
 	GetOrders() ([]model.Order, error)
+	Close() error
+}
+
+func (s *Service) Close() error {
+	return s.k.Close()
 }
 
 func (s *Service) CreateOrderFromRequest(req model.CreateOrderRequest) error {
@@ -133,65 +143,33 @@ func (s *Service) GetOrders() ([]model.Order, error) {
 }
 
 func (s *Service) reserveInventory(productID int, quantity int) error {
-	// Create request body with quantity
-	requestBody := model.ReserveInventoryRequest{
-		Quantity: quantity,
-	}
-
-	jsonBody, err := json.Marshal(requestBody)
+	// Send reserve inventory request via Kafka
+	err := s.k.ReserveInventory(productID, quantity)
 	if err != nil {
-		return fmt.Errorf("failed to marshal request body: %w", err)
+		return fmt.Errorf("failed to send reserve inventory request: %w", err)
 	}
 
-	// Call inventory service to reserve items
-	resp, err := http.Post(
-		fmt.Sprintf("http://inventory:9081/reserve/%d", productID),
-		"application/json",
-		bytes.NewBuffer(jsonBody),
-	)
+	// Wait for response with timeout
+	err = s.k.WaitForInventoryResponse(productID, 30*time.Second)
 	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
+		return fmt.Errorf("failed to reserve inventory: %w", err)
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		var errorResp model.ErrorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err == nil {
-			return fmt.Errorf("inventory service error: %s - %s", errorResp.Error, errorResp.Details)
-		}
-		return fmt.Errorf("inventory service error: %s", resp.Status)
-	}
 	return nil
 }
 
 func (s *Service) releaseInventory(productID int, quantity int) error {
-	// Create request body with quantity
-	requestBody := model.ReleaseInventoryRequest{
-		Quantity: quantity,
-	}
-
-	jsonBody, err := json.Marshal(requestBody)
+	// Send release inventory request via Kafka
+	err := s.k.ReleaseInventory(productID, quantity)
 	if err != nil {
-		return fmt.Errorf("failed to marshal request body: %w", err)
+		return fmt.Errorf("failed to send release inventory request: %w", err)
 	}
 
-	// Call inventory service to release items
-	resp, err := http.Post(
-		fmt.Sprintf("http://inventory:9081/release/%d", productID),
-		"application/json",
-		bytes.NewBuffer(jsonBody),
-	)
+	// Wait for response with timeout
+	err = s.k.WaitForInventoryResponse(productID, 30*time.Second)
 	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
+		return fmt.Errorf("failed to release inventory: %w", err)
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		var errorResp model.ErrorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err == nil {
-			return fmt.Errorf("inventory service error: %s - %s", errorResp.Error, errorResp.Details)
-		}
-		return fmt.Errorf("inventory service error: %s", resp.Status)
-	}
 	return nil
 }

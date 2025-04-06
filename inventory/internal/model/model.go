@@ -20,15 +20,24 @@ type ReduceQuantityOfAProduct struct {
 }
 
 type ReserveInventoryRequest struct {
-	Quantity int `json:"quantity"`
+	ProductID int `json:"product_id"`
+	Quantity  int `json:"quantity"`
 }
 
 type ReleaseInventoryRequest struct {
-	Quantity int `json:"quantity"`
+	ProductID int `json:"product_id"`
+	Quantity  int `json:"quantity"`
 }
 
 type ErrorResponse struct {
 	Error   string `json:"error"`
 	Code    string `json:"code"`
 	Details string `json:"details,omitempty"`
+}
+
+// Kafka-related models
+type InventoryResponse struct {
+	ProductID int    `json:"product_id"`
+	Success   bool   `json:"success"`
+	Error     string `json:"error,omitempty"`
 }

@@ -68,6 +68,84 @@ services:
     ports:
       - 8080:8080
 
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.3
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - mynet
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.3
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - mynet
+
+  init-kafka:
+    image: confluentinc/cp-kafka:latest
+    depends_on:
+      - kafka
+    entrypoint: [ '/bin/sh', '-c' ]
+    command: |
+      "
+      # Wait for Kafka to be ready
+      echo 'Waiting for Kafka to be ready...'
+      while ! kafka-topics --bootstrap-server kafka:29092 --list; do
+        echo 'Kafka not ready yet...'
+        sleep 5
+      done
+
+      echo -e 'Creating kafka topics'
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic oms.reserve-inventory.0 --replication-factor 1 --partitions 1
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic oms.release-inventory.0 --replication-factor 1 --partitions 1
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic oms.inventory-response.0 --replication-factor 1 --partitions 1
+
+      echo -e 'Successfully created the following topics:'
+      kafka-topics --bootstrap-server kafka:29092 --list
+      "
+    networks:
+      - mynet
+
+  redpanda-console:
+    image: docker.redpanda.com/redpandadata/console:v2.3.8
+    container_name: redpanda-console
+    depends_on:
+      - kafka
+      - init-kafka
+    ports:
+      - "8082:8080"
+    entrypoint: /bin/sh
+    command: -c "echo \"$$CONSOLE_CONFIG_FILE\" > /tmp/config.yml && /app/console"
+    environment:
+      CONFIG_FILEPATH: /tmp/config.yml
+      CONSOLE_CONFIG_FILE: |
+        kafka:
+          brokers: ["kafka:29092"]
+          sasl:
+            enabled: false
+          tls:
+            enabled: false
+        server:
+          listenPort: 8080
+    networks:
+      - mynet
+
   product:
     depends_on:
       postgres-product:
@@ -96,6 +174,8 @@ services:
     depends_on:
       postgres-inventory:
         condition: service_healthy
+      kafka:
+        condition: service_started
     build:
       context: ./inventory
       dockerfile: Dockerfile.multistage
@@ -105,6 +185,7 @@ services:
       - mynet
     environment:
       PORT: :9081
+      KAFKA_BROKERS: kafka:29092
     ports:
       - 9081:9081
     deploy:
@@ -120,6 +201,8 @@ services:
     depends_on:
       postgres-oms:
         condition: service_healthy
+      kafka:
+        condition: service_started
     build:
       context: ./oms
       dockerfile: Dockerfile.multistage
@@ -129,6 +212,7 @@ services:
       - mynet
     environment:
       PORT: :10081
+      KAFKA_BROKERS: kafka:29092
     ports:
       - 10081:10081
     deploy:

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -12,6 +13,9 @@ import (
 	"oms/internal/server"
 	"oms/internal/service"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	_ "github.com/lib/pq"
 )
@@ -28,7 +32,6 @@ func main() {
 	port := os.Getenv("PORT")
 
 	// Define the connection string
-
 	connStr := fmt.Sprintf(
 		"postgres://%s:%s@%s:%d/%s?sslmode=disable",
 		dbUser, dbPassword, dbHost, dbPort, dbName,
@@ -53,15 +56,56 @@ func main() {
 	mux := http.NewServeMux()
 
 	repository := repository.New(logger, db)
-	service := service.New(logger, repository)
-	handler := handler.New(logger, service)
+	svc, err := service.New(logger, repository)
+	if err != nil {
+		logger.Error("Failed to create service", "error", err)
+		os.Exit(1)
+	}
+	defer svc.Close()
+
+	handler := handler.New(logger, svc)
 
 	routes.RegisterRoutes(mux, handler)
 
-	logger.Info("Starting HTTP server at", "port", port)
-	err = server.Init(port, mux)
-	if err != nil {
-		logger.Error("Failed to start HTTP server", "error", err)
-		os.Exit(1)
+	// Create a channel to receive the server instance from server.Init
+	serverReady := make(chan struct{})
+
+	// Start the server in a goroutine
+	go func() {
+		logger.Info("Starting HTTP server at", "port", port)
+		err := server.Init(port, mux)
+		if err != nil && err != http.ErrServerClosed {
+			logger.Error("Failed to start HTTP server", "error", err)
+			os.Exit(1)
+		}
+		close(serverReady)
+	}()
+
+	// Set up signal notification channel
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	// Wait for either server to be ready or a signal
+	select {
+	case <-serverReady:
+		logger.Info("Server started successfully")
+	case sig := <-sigChan:
+		logger.Info("Received signal, shutting down", "signal", sig)
+		os.Exit(0)
 	}
+
+	// Wait for interrupt signal
+	sig := <-sigChan
+	logger.Info("Received signal, shutting down", "signal", sig)
+
+	// Create a context with timeout for shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Shutdown the server
+	if err := server.Shutdown(ctx); err != nil {
+		logger.Error("Server forced to shutdown", "error", err)
+	}
+
+	logger.Info("Server exited properly")
 }
