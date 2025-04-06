@@ -24,7 +24,7 @@ func New(l *slog.Logger, r repository.RepositoryI) *Service {
 }
 
 type ServiceI interface {
-	CreateOrder(order model.CreateOrder) error
+	CreateOrder(order model.CreateOrder) (int, error)
 	CreateOrderFromRequest(req model.CreateOrderRequest) error
 	GetOrders() ([]model.Order, error)
 }
@@ -43,33 +43,21 @@ func (s *Service) CreateOrderFromRequest(req model.CreateOrderRequest) error {
 	}
 
 	// Create order
-	return s.CreateOrder(order)
+	_, err := s.CreateOrder(order)
+	return err
 }
 
-func (s *Service) CreateOrder(order model.CreateOrder) error {
-	// Create order in database
-	err := s.r.CreateOrder(order)
+func (s *Service) CreateOrder(order model.CreateOrder) (int, error) {
+	// Create order in database and get the ID
+	orderID, err := s.r.CreateOrder(order)
 	if err != nil {
 		s.l.Error("failed to create order", "error", err)
-		return fmt.Errorf("failed to create order: %w", err)
+		return 0, fmt.Errorf("failed to create order: %w", err)
 	}
-
-	// Get the created order to get its ID
-	orders, err := s.r.GetOrders()
-	if err != nil {
-		s.l.Error("failed to get orders", "error", err)
-		return fmt.Errorf("failed to get orders: %w", err)
-	}
-
-	// Find the most recently created order
-	if len(orders) == 0 {
-		return fmt.Errorf("failed to find created order")
-	}
-	createdOrder := orders[len(orders)-1]
 
 	// Start saga
 	saga := model.OrderSaga{
-		OrderID:   createdOrder.ID,
+		OrderID:   orderID,
 		Status:    "STARTED",
 		Step:      0,
 		CreatedAt: time.Now(),
@@ -78,14 +66,14 @@ func (s *Service) CreateOrder(order model.CreateOrder) error {
 	// Save saga state
 	err = s.r.CreateSaga(saga)
 	if err != nil {
-		s.l.Error("failed to create saga", "error", err, "order_id", createdOrder.ID)
-		return fmt.Errorf("failed to create saga: %w", err)
+		s.l.Error("failed to create saga", "error", err, "order_id", orderID)
+		return orderID, fmt.Errorf("failed to create saga: %w", err)
 	}
 
 	// Step 1: Reserve inventory for all items
 	for _, item := range order.Items {
 		if item.Quantity <= 0 {
-			return fmt.Errorf("invalid quantity for product %d", item.Product.ID)
+			return orderID, fmt.Errorf("invalid quantity for product %d", item.Product.ID)
 		}
 
 		if err := s.reserveInventory(item.Product.ID, item.Quantity); err != nil {
@@ -97,7 +85,7 @@ func (s *Service) CreateOrder(order model.CreateOrder) error {
 				s.releaseInventory(releasedItem.Product.ID, releasedItem.Quantity)
 			}
 			s.r.UpdateSagaStatus(saga.OrderID, "FAILED")
-			return fmt.Errorf("failed to reserve inventory for product %d: %w", item.Product.ID, err)
+			return orderID, fmt.Errorf("failed to reserve inventory for product %d: %w", item.Product.ID, err)
 		}
 	}
 
@@ -105,20 +93,20 @@ func (s *Service) CreateOrder(order model.CreateOrder) error {
 	s.r.UpdateSagaStatus(saga.OrderID, "INVENTORY_RESERVED")
 
 	// Step 2: Create order items
-	err = s.r.CreateOrderItems(createdOrder.ID, order.Items)
+	err = s.r.CreateOrderItems(orderID, order.Items)
 	if err != nil {
 		// Compensating transaction: Release all inventory
 		for _, item := range order.Items {
 			s.releaseInventory(item.Product.ID, item.Quantity)
 		}
 		s.r.UpdateSagaStatus(saga.OrderID, "FAILED")
-		return fmt.Errorf("failed to create order items: %w", err)
+		return orderID, fmt.Errorf("failed to create order items: %w", err)
 	}
 
 	// Update saga status to completed
 	s.r.UpdateSagaStatus(saga.OrderID, "COMPLETED")
 
-	return nil
+	return orderID, nil
 }
 
 func (s *Service) GetOrders() ([]model.Order, error) {
