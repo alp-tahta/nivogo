@@ -15,12 +15,7 @@ type Service struct {
 	k *kafka.KafkaClient
 }
 
-func New(l *slog.Logger, r repository.RepositoryI) (*Service, error) {
-	k, err := kafka.New(l)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Kafka client: %w", err)
-	}
-
+func New(l *slog.Logger, r repository.RepositoryI, k *kafka.KafkaClient) (*Service, error) {
 	return &Service{
 		l: l,
 		r: r,
@@ -32,11 +27,6 @@ type ServiceI interface {
 	CreateOrder(order model.CreateOrder) (int, error)
 	CreateOrderFromRequest(req model.CreateOrderRequest) error
 	GetOrders() ([]model.Order, error)
-	Close() error
-}
-
-func (s *Service) Close() error {
-	return s.k.Close()
 }
 
 func (s *Service) CreateOrderFromRequest(req model.CreateOrderRequest) error {
@@ -149,12 +139,6 @@ func (s *Service) reserveInventory(productID int, quantity int) error {
 		return fmt.Errorf("failed to send reserve inventory request: %w", err)
 	}
 
-	// Wait for response with timeout
-	err = s.k.WaitForInventoryResponse(productID, 30*time.Second)
-	if err != nil {
-		return fmt.Errorf("failed to reserve inventory: %w", err)
-	}
-
 	return nil
 }
 
@@ -163,12 +147,6 @@ func (s *Service) releaseInventory(productID int, quantity int) error {
 	err := s.k.ReleaseInventory(productID, quantity)
 	if err != nil {
 		return fmt.Errorf("failed to send release inventory request: %w", err)
-	}
-
-	// Wait for response with timeout
-	err = s.k.WaitForInventoryResponse(productID, 30*time.Second)
-	if err != nil {
-		return fmt.Errorf("failed to release inventory: %w", err)
 	}
 
 	return nil

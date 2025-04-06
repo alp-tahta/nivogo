@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"oms/internal/handler"
+	"oms/internal/kafka"
 	"oms/internal/logger"
 	"oms/internal/repository"
 	"oms/internal/routes"
@@ -56,16 +57,49 @@ func main() {
 	mux := http.NewServeMux()
 
 	repository := repository.New(logger, db)
-	svc, err := service.New(logger, repository)
+
+	// Get Kafka brokers from environment or use default
+	brokers := []string{"localhost:9092"}
+	if envBrokers := os.Getenv("KAFKA_BROKERS"); envBrokers != "" {
+		brokers = []string{envBrokers}
+	}
+
+	// Initialize Kafka client
+	kafkaClient, err := kafka.New(logger)
+	if err != nil {
+		logger.Error("Failed to create Kafka client", "error", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := kafkaClient.Close(); err != nil {
+			logger.Error("Failed to close Kafka client", "error", err)
+		}
+	}()
+
+	// Create inventory response handler
+	responseHandler := kafka.NewInventoryResponseHandler(logger, repository, brokers)
+	defer responseHandler.Close()
+
+	// Create service with Kafka client
+	svc, err := service.New(logger, repository, kafkaClient)
 	if err != nil {
 		logger.Error("Failed to create service", "error", err)
 		os.Exit(1)
 	}
-	defer svc.Close()
 
 	handler := handler.New(logger, svc)
 
 	routes.RegisterRoutes(mux, handler)
+
+	// Create a context for the application
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Start the inventory response handler
+	if err := responseHandler.Start(ctx); err != nil {
+		logger.Error("Failed to start inventory response handler", "error", err)
+		os.Exit(1)
+	}
 
 	// Create a channel to receive the server instance from server.Init
 	serverReady := make(chan struct{})
@@ -98,12 +132,15 @@ func main() {
 	sig := <-sigChan
 	logger.Info("Received signal, shutting down", "signal", sig)
 
+	// Cancel the main context to stop the inventory response handler
+	cancel()
+
 	// Create a context with timeout for shutdown
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
 
 	// Shutdown the server
-	if err := server.Shutdown(ctx); err != nil {
+	if err := server.Shutdown(shutdownCtx); err != nil {
 		logger.Error("Server forced to shutdown", "error", err)
 	}
 
