@@ -62,8 +62,8 @@ func main() {
 
 	routes.RegisterRoutes(mux, handler)
 
-	// Create Kafka server
-	kafkaServer, err := kafka.New(logger, service)
+	// Create Kafka server with repository directly
+	kafkaServer, err := kafka.New(logger, repository)
 	if err != nil {
 		logger.Error("Failed to create Kafka server", "error", err)
 		os.Exit(1)
