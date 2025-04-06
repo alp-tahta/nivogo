@@ -9,6 +9,7 @@ const Cart = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [checkoutMessage, setCheckoutMessage] = useState('');
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -114,11 +115,54 @@ const Cart = () => {
 
   const handleCheckout = () => {
     setCheckoutLoading(true);
+    setCheckoutMessage('');
     
     // Simulate a checkout process with a 2-second delay
-    setTimeout(() => {
-      setCheckoutLoading(false);
-      alert('Checkout completed successfully!');
+    setTimeout(async () => {
+      try {
+        // Prepare order data
+        const orderData = {
+          orderId: `ORD-${Date.now()}`,
+          items: items.map(item => ({
+            productId: item.id,
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity
+          })),
+          subtotal: calculateSubtotal(),
+          tax: calculateSubtotal() * 0.1, // 10% tax
+          total: calculateSubtotal() * 1.1, // Subtotal + tax
+          orderDate: new Date().toISOString(),
+          status: 'pending'
+        };
+        
+        console.log('Sending order to API:', orderData);
+        
+        // Make API request to localhost:8081
+        const response = await fetch(`localhost:10081/orders`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(orderData)
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Failed to submit order: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        console.log('Order submitted successfully:', result);
+        
+        // Show success message
+        setCheckoutMessage('Order submitted successfully!');
+        
+      } catch (err) {
+        console.error('Error submitting order:', err);
+        setCheckoutMessage('Failed to submit order. Please try again.');
+      } finally {
+        setCheckoutLoading(false);
+      }
     }, 2000);
   };
 
@@ -188,6 +232,11 @@ const Cart = () => {
           >
             {checkoutLoading ? 'Processing...' : 'Proceed to Checkout'}
           </button>
+          {checkoutMessage && (
+            <div className={`checkout-message ${checkoutMessage.includes('Failed') ? 'error' : 'success'}`}>
+              {checkoutMessage}
+            </div>
+          )}
         </div>
       </div>
       
