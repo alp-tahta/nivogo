@@ -122,18 +122,14 @@ const Cart = () => {
       try {
         // Prepare order data
         const orderData = {
-          orderId: `ORD-${Date.now()}`,
           items: items.map(item => ({
             productId: item.id,
             name: item.name,
             price: item.price,
             quantity: item.quantity
           })),
-          subtotal: calculateSubtotal(),
-          tax: calculateSubtotal() * 0.1, // 10% tax
-          total: calculateSubtotal() * 1.1, // Subtotal + tax
-          orderDate: new Date().toISOString(),
-          status: 'pending'
+          total: calculateSubtotal(),
+          orderDate: new Date().toISOString()
         };
         
         console.log('Sending order to API:', orderData);
