@@ -152,8 +152,8 @@ services:
     depends_on:
       - product
     environment:
-      - REACT_APP_API_URL=http://localhost:8081
-
+      - REACT_APP_API_URL_PRODUCT=http://localhost:8081
+      - REACT_APP_API_URL_OMS=http://localhost:10081
 networks:
   mynet:
     driver: bridge

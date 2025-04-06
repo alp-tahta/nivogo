@@ -2,7 +2,6 @@ import React from 'react';
 import '../styles/CartItem.css';
 
 const CartItem = ({ name, price = 0, description, quantity = 1, total = 0, onQuantityChange, onRemove }) => {
-  console.log('Rendering CartItem:', { name, price, description, quantity, total });
 
   const formatPrice = (value) => {
     return typeof value === 'number' ? value.toFixed(2) : '0.00';

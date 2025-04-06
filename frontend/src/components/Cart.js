@@ -10,6 +10,8 @@ const Cart = () => {
   const [error, setError] = useState(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutMessage, setCheckoutMessage] = useState('');
+  const [isLoadingDone, setIsLoadingDone] = useState(false);
+  const [results, setResults] = useState(null);
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -113,52 +115,59 @@ const Cart = () => {
     setItems(updatedItems);
   };
 
+  const orderData = {
+    items: items.map(item => ({
+      product: {
+        id: item.id,
+        name: item.name,
+        price: item.price
+      },
+      quantity: item.quantity
+    }))
+  };
+
+  useEffect(() => {
+    if (isLoadingDone) {
+      console.log('Loading is done, sending order to API');
+      const sendOrder = async () => {
+        try {
+          const response = await fetch(`http://localhost:10081/orders`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            mode: 'cors',
+            credentials: 'include',
+            body: JSON.stringify(orderData)
+          });
+          
+          if (!response.ok) {
+            throw new Error(`Failed to submit order: ${response.status}`);
+          }
+          
+          const result = await response.json();
+          console.log('Order submitted successfully:', result);
+          setResults(result);
+          setCheckoutMessage('Order submitted successfully!');
+        } catch (err) {
+          console.error('Error submitting order:', err);
+          setCheckoutMessage('Failed to submit order. Please try again.');
+        }
+      };
+      
+      sendOrder();
+    }
+  }, [isLoadingDone]);
+
   const handleCheckout = () => {
     setCheckoutLoading(true);
     setCheckoutMessage('');
     
     // Simulate a checkout process with a 2-second delay
-    setTimeout(async () => {
-      try {
-        // Prepare order data
-        const orderData = {
-          items: items.map(item => ({
-            productId: item.id,
-            name: item.name,
-            price: item.price,
-            quantity: item.quantity
-          })),
-          total: calculateSubtotal(),
-          orderDate: new Date().toISOString()
-        };
-        
-        console.log('Sending order to API:', orderData);
-        
-        // Make API request to localhost:8081
-        const response = await fetch(`localhost:10081/orders`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(orderData)
-        });
-        
-        if (!response.ok) {
-          throw new Error(`Failed to submit order: ${response.status}`);
-        }
-        
-        const result = await response.json();
-        console.log('Order submitted successfully:', result);
-        
-        // Show success message
-        setCheckoutMessage('Order submitted successfully!');
-        
-      } catch (err) {
-        console.error('Error submitting order:', err);
-        setCheckoutMessage('Failed to submit order. Please try again.');
-      } finally {
-        setCheckoutLoading(false);
-      }
+    setTimeout(() => {
+      setCheckoutLoading(false);
+      setIsLoadingDone(true);
     }, 2000);
   };
 
