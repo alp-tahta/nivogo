@@ -190,6 +190,16 @@ const Cart = () => {
           </button>
         </div>
       </div>
+      
+      {/* Loading Modal */}
+      {checkoutLoading && (
+        <div className="loading-modal">
+          <div className="loading-modal-content">
+            <div className="loading-spinner"></div>
+            <p>Processing your order...</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
