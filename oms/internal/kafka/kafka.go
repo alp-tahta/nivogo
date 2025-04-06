@@ -150,39 +150,42 @@ func (k *KafkaClient) ReleaseInventory(productID int, quantity int) error {
 func (k *KafkaClient) WaitForInventoryResponse(productID int, timeout time.Duration) error {
 	k.l.Info("Waiting for inventory response", "product_id", productID, "timeout", timeout)
 
+	// Create a context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	// Create a ticker to log waiting status
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
+	// Get broker addresses from the existing reader
+	brokers := k.reader.Config().Brokers
 
-	// Keep track of messages that don't match our product ID
-	skippedMessages := 0
-	maxSkippedMessages := 100 // Limit the number of messages we'll skip before timing out
+	// Create a dedicated reader for this response
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:  brokers,
+		GroupID:  fmt.Sprintf("oms-response-%d", productID), // Unique group ID for this request
+		Topic:    InventoryResponseTopic,
+		MaxBytes: 10e6, // 10MB
+		MinBytes: 10e3, // 10KB
+		MaxWait:  time.Second,
+	})
+	defer reader.Close()
 
+	k.l.Info("Created dedicated reader for inventory response", "product_id", productID, "brokers", brokers)
+
+	// Read messages until we find a match or context is canceled
 	for {
 		select {
 		case <-ctx.Done():
 			k.l.Error("Context deadline exceeded while waiting for inventory response", "product_id", productID)
 			return fmt.Errorf("timeout waiting for inventory response: %w", ctx.Err())
-		case <-ticker.C:
-			k.l.Info("Still waiting for inventory response", "product_id", productID, "timeout", timeout, "skipped_messages", skippedMessages)
 		default:
-			// Read message with a shorter timeout to allow for more frequent checking of other cases
+			// Read message with a shorter timeout to allow for more frequent checking of context
 			readCtx, readCancel := context.WithTimeout(ctx, 1*time.Second)
-			msg, err := k.reader.ReadMessage(readCtx)
+			msg, err := reader.ReadMessage(readCtx)
 			readCancel()
 
 			if err != nil {
-				if err == context.DeadlineExceeded {
-					// This is just the short read timeout, continue waiting
+				if err == context.DeadlineExceeded || err == context.Canceled {
+					// This is just the short read timeout or context canceled, continue waiting
 					continue
-				}
-				if err == context.Canceled {
-					// The main context was canceled
-					k.l.Error("Context canceled while waiting for inventory response", "product_id", productID)
-					return fmt.Errorf("timeout waiting for inventory response: %w", err)
 				}
 				k.l.Error("failed to read message", "error", err)
 				continue
@@ -208,11 +211,6 @@ func (k *KafkaClient) WaitForInventoryResponse(productID int, timeout time.Durat
 				return nil
 			} else {
 				k.l.Info("Received response for different product", "expected", productID, "received", string(msg.Key))
-				skippedMessages++
-				if skippedMessages >= maxSkippedMessages {
-					k.l.Error("Too many non-matching messages received", "product_id", productID, "skipped_messages", skippedMessages)
-					return fmt.Errorf("timeout after skipping %d non-matching messages", skippedMessages)
-				}
 			}
 		}
 	}
