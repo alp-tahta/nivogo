@@ -8,6 +8,7 @@ const Cart = () => {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -111,6 +112,16 @@ const Cart = () => {
     setItems(updatedItems);
   };
 
+  const handleCheckout = () => {
+    setCheckoutLoading(true);
+    
+    // Simulate a checkout process with a 2-second delay
+    setTimeout(() => {
+      setCheckoutLoading(false);
+      alert('Checkout completed successfully!');
+    }, 2000);
+  };
+
   const calculateSubtotal = () => {
     return items.reduce((sum, item) => {
       const price = typeof item.price === 'number' ? item.price : 0;
@@ -170,8 +181,12 @@ const Cart = () => {
               <span>${subtotal.toFixed(2)}</span>
             </div>
           </div>
-          <button className="checkout-button">
-            Proceed to Checkout
+          <button 
+            className="checkout-button"
+            onClick={handleCheckout}
+            disabled={checkoutLoading}
+          >
+            {checkoutLoading ? 'Processing...' : 'Proceed to Checkout'}
           </button>
         </div>
       </div>
