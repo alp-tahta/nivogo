@@ -95,16 +95,31 @@ func (h *ReserveInventoryHandler) handleMessages(ctx context.Context) {
 
 			// Parse request
 			var request model.ReserveInventoryRequest
-			productID := request.ProductID
-			orderID := request.OrderID
-
 			if err := json.Unmarshal(msg.Value, &request); err != nil {
 				h.l.Error("failed to unmarshal request", "error", err)
-				h.sendResponse(orderID, productID, false, "failed to unmarshal request")
+				// Extract order ID and product ID from the message key as fallback
+				var orderID, productID int
+				_, err := fmt.Sscanf(string(msg.Key), "%d-%d", &orderID, &productID)
+				if err != nil {
+					h.l.Error("failed to extract order ID and product ID from message key", "key", string(msg.Key), "error", err)
+				} else {
+					h.sendResponse(orderID, productID, false, "failed to unmarshal request")
+				}
 				continue
 			}
 
-			h.l.Info("Processing reserve inventory request", "product_id", productID, "quantity", request.Quantity)
+			// Get product ID and order ID from the request
+			productID := request.ProductID
+			orderID := request.OrderID
+
+			// Validate product ID
+			if productID == 0 {
+				h.l.Error("invalid product ID", "product_id", productID)
+				h.sendResponse(orderID, productID, false, "invalid product ID: product ID cannot be 0")
+				continue
+			}
+
+			h.l.Info("Processing reserve inventory request", "order_id", orderID, "product_id", productID, "quantity", request.Quantity)
 
 			// Process request using repository directly
 			quantity, err := h.r.GetQuantityOfAProduct(productID)
