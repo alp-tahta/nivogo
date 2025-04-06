@@ -46,6 +46,7 @@ type ErrorResponse struct {
 
 // Kafka-related models
 type ReserveInventoryRequest struct {
+	OrderID   int `json:"order_id"`
 	ProductID int `json:"product_id"`
 	Quantity  int `json:"quantity"`
 }
@@ -56,6 +57,7 @@ type ReleaseInventoryRequest struct {
 }
 
 type InventoryResponse struct {
+	OrderID   int    `json:"order_id"`
 	ProductID int    `json:"product_id"`
 	Success   bool   `json:"success"`
 	Error     string `json:"error,omitempty"`

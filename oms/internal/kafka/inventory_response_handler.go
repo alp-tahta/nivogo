@@ -79,10 +79,6 @@ func (h *InventoryResponseHandler) handleMessages(ctx context.Context) {
 
 			h.l.Info("Received inventory response", "key", string(msg.Key), "value_length", len(msg.Value))
 
-			// Parse product ID from key
-			productID := 0
-			fmt.Sscanf(string(msg.Key), "%d", &productID)
-
 			// Parse response
 			var response model.InventoryResponse
 			if err := json.Unmarshal(msg.Value, &response); err != nil {
@@ -90,74 +86,28 @@ func (h *InventoryResponseHandler) handleMessages(ctx context.Context) {
 				continue
 			}
 
-			h.l.Info("Processing inventory response", "product_id", productID, "success", response.Success)
+			h.l.Info("Processing inventory response", "order_id", response.OrderID, "product_id", response.ProductID, "success", response.Success)
 
 			// Process response
 			if response.Success {
-				h.l.Info("Inventory operation successful", "product_id", productID)
+				h.l.Info("Inventory operation successful", "order_id", response.OrderID, "product_id", response.ProductID)
 
-				// Find the saga for this product
-				sagas, err := h.r.GetSagasByStatus("INVENTORY_RESERVED")
+				// Update saga status
+				err = h.r.UpdateSagaStatus(response.OrderID, "COMPLETED")
 				if err != nil {
-					h.l.Error("failed to get sagas", "error", err)
-					continue
-				}
-
-				// Update saga status if found
-				for _, saga := range sagas {
-					// Check if this saga is waiting for this product
-					order, err := h.r.GetOrder(saga.OrderID)
-					if err != nil {
-						h.l.Error("failed to get order", "error", err, "order_id", saga.OrderID)
-						continue
-					}
-
-					// Check if any item in the order matches this product
-					for _, item := range order.Items {
-						if item.Product.ID == productID {
-							// Update saga status
-							err = h.r.UpdateSagaStatus(saga.OrderID, "COMPLETED")
-							if err != nil {
-								h.l.Error("failed to update saga status", "error", err, "order_id", saga.OrderID)
-							} else {
-								h.l.Info("Updated saga status to COMPLETED", "order_id", saga.OrderID)
-							}
-							break
-						}
-					}
+					h.l.Error("failed to update saga status", "error", err, "order_id", response.OrderID)
+				} else {
+					h.l.Info("Updated saga status to COMPLETED", "order_id", response.OrderID)
 				}
 			} else {
-				h.l.Error("Inventory operation failed", "product_id", productID, "error", response.Error)
+				h.l.Error("Inventory operation failed", "order_id", response.OrderID, "product_id", response.ProductID, "error", response.Error)
 
-				// Find the saga for this product
-				sagas, err := h.r.GetSagasByStatus("INVENTORY_RESERVED")
+				// Update saga status
+				err = h.r.UpdateSagaStatus(response.OrderID, "FAILED")
 				if err != nil {
-					h.l.Error("failed to get sagas", "error", err)
-					continue
-				}
-
-				// Update saga status if found
-				for _, saga := range sagas {
-					// Check if this saga is waiting for this product
-					order, err := h.r.GetOrder(saga.OrderID)
-					if err != nil {
-						h.l.Error("failed to get order", "error", err, "order_id", saga.OrderID)
-						continue
-					}
-
-					// Check if any item in the order matches this product
-					for _, item := range order.Items {
-						if item.Product.ID == productID {
-							// Update saga status
-							err = h.r.UpdateSagaStatus(saga.OrderID, "FAILED")
-							if err != nil {
-								h.l.Error("failed to update saga status", "error", err, "order_id", saga.OrderID)
-							} else {
-								h.l.Info("Updated saga status to FAILED", "order_id", saga.OrderID)
-							}
-							break
-						}
-					}
+					h.l.Error("failed to update saga status", "error", err, "order_id", response.OrderID)
+				} else {
+					h.l.Info("Updated saga status to FAILED", "order_id", response.OrderID)
 				}
 			}
 		}

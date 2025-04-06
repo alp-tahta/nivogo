@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"oms/internal/model"
+	"oms/internal/repository"
 
 	"github.com/segmentio/kafka-go"
 )
@@ -17,44 +18,31 @@ const (
 	// Topic names
 	ReserveInventoryTopic  = "oms.reserve-inventory.0"
 	ReleaseInventoryTopic  = "oms.release-inventory.0"
-	InventoryResponseTopic = "oms.inventory-response.0"
+	InventoryResponseTopic = "oms.order-item-stock-reserved.0"
 )
 
 // KafkaClient handles Kafka operations
 type KafkaClient struct {
-	l             *slog.Logger
-	reserveWriter *kafka.Writer
-	releaseWriter *kafka.Writer
-	reader        *kafka.Reader
+	l        *slog.Logger
+	r        repository.RepositoryI
+	producer *InventoryProducer
+	reader   *kafka.Reader
 }
 
 // New creates a new Kafka client
-func New(l *slog.Logger) (*KafkaClient, error) {
-	brokers := os.Getenv("KAFKA_BROKERS")
-	if brokers == "" {
-		brokers = "localhost:9092"
+func New(l *slog.Logger, r repository.RepositoryI) (*KafkaClient, error) {
+	// Get Kafka brokers from environment or use default
+	brokers := []string{"localhost:9092"}
+	if envBrokers := os.Getenv("KAFKA_BROKERS"); envBrokers != "" {
+		brokers = []string{envBrokers}
 	}
 
-	// Create writers for sending messages
-	reserveWriter := &kafka.Writer{
-		Addr:         kafka.TCP(brokers),
-		Topic:        ReserveInventoryTopic,
-		Balancer:     &kafka.LeastBytes{},
-		RequiredAcks: kafka.RequireOne,
-		Async:        false, // Ensure messages are written before returning
-	}
-
-	releaseWriter := &kafka.Writer{
-		Addr:         kafka.TCP(brokers),
-		Topic:        ReleaseInventoryTopic,
-		Balancer:     &kafka.LeastBytes{},
-		RequiredAcks: kafka.RequireOne,
-		Async:        false, // Ensure messages are written before returning
-	}
+	// Create the inventory producer
+	producer := NewInventoryProducer(l, brokers)
 
 	// Create a reader for receiving responses
 	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers:  []string{brokers},
+		Brokers:  brokers,
 		Topic:    InventoryResponseTopic,
 		GroupID:  "oms-group",
 		MinBytes: 10e3, // 10KB
@@ -63,92 +51,43 @@ func New(l *slog.Logger) (*KafkaClient, error) {
 	})
 
 	return &KafkaClient{
-		l:             l,
-		reserveWriter: reserveWriter,
-		releaseWriter: releaseWriter,
-		reader:        reader,
+		l:        l,
+		r:        r,
+		producer: producer,
+		reader:   reader,
 	}, nil
 }
 
 // Close closes the Kafka client
 func (k *KafkaClient) Close() error {
-	if err := k.reserveWriter.Close(); err != nil {
-		return fmt.Errorf("failed to close reserve writer: %w", err)
+	// Close the producer
+	if err := k.producer.Close(); err != nil {
+		k.l.Error("failed to close producer", "error", err)
+		return fmt.Errorf("failed to close producer: %w", err)
 	}
-	if err := k.releaseWriter.Close(); err != nil {
-		return fmt.Errorf("failed to close release writer: %w", err)
-	}
+
+	// Close the reader
 	if err := k.reader.Close(); err != nil {
+		k.l.Error("failed to close reader", "error", err)
 		return fmt.Errorf("failed to close reader: %w", err)
 	}
+
 	return nil
 }
 
 // ReserveInventory sends a reserve inventory request to Kafka
-func (k *KafkaClient) ReserveInventory(productID int, quantity int) error {
-	// Create request
-	request := model.ReserveInventoryRequest{
-		ProductID: productID,
-		Quantity:  quantity,
-	}
-
-	// Marshal request
-	jsonData, err := json.Marshal(request)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	// Create a context with timeout for writing the message
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	// Send message
-	err = k.reserveWriter.WriteMessages(ctx, kafka.Message{
-		Key:   []byte(fmt.Sprintf("%d", productID)),
-		Value: jsonData,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to write message: %w", err)
-	}
-
-	k.l.Info("sent reserve inventory request", "product_id", productID, "quantity", quantity)
-	return nil
+func (k *KafkaClient) ReserveInventory(orderID int, productID int, quantity int) error {
+	return k.producer.ReserveInventory(orderID, productID, quantity)
 }
 
 // ReleaseInventory sends a release inventory request to Kafka
-func (k *KafkaClient) ReleaseInventory(productID int, quantity int) error {
-	// Create request
-	request := model.ReleaseInventoryRequest{
-		ProductID: productID,
-		Quantity:  quantity,
-	}
-
-	// Marshal request
-	jsonData, err := json.Marshal(request)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	// Create a context with timeout for writing the message
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	// Send message
-	err = k.releaseWriter.WriteMessages(ctx, kafka.Message{
-		Key:   []byte(fmt.Sprintf("%d", productID)),
-		Value: jsonData,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to write message: %w", err)
-	}
-
-	k.l.Info("sent release inventory request", "product_id", productID, "quantity", quantity)
-	return nil
+func (k *KafkaClient) ReleaseInventory(orderID int, productID int, quantity int) error {
+	return k.producer.ReleaseInventory(orderID, productID, quantity)
 }
 
 // WaitForInventoryResponse waits for a response from the inventory service
-func (k *KafkaClient) WaitForInventoryResponse(productID int, timeout time.Duration) error {
-	k.l.Info("Waiting for inventory response", "product_id", productID, "timeout", timeout)
+func (k *KafkaClient) WaitForInventoryResponse(orderID int, productID int, timeout time.Duration) error {
+	k.l.Info("Waiting for inventory response", "order_id", orderID, "product_id", productID, "timeout", timeout)
 
 	// Create a context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -160,7 +99,7 @@ func (k *KafkaClient) WaitForInventoryResponse(productID int, timeout time.Durat
 	// Create a dedicated reader for this response
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:  brokers,
-		GroupID:  fmt.Sprintf("oms-response-%d", productID), // Unique group ID for this request
+		GroupID:  fmt.Sprintf("oms-response-%d-%d", orderID, productID), // Unique group ID for this request
 		Topic:    InventoryResponseTopic,
 		MaxBytes: 10e6, // 10MB
 		MinBytes: 10e3, // 10KB
@@ -168,13 +107,13 @@ func (k *KafkaClient) WaitForInventoryResponse(productID int, timeout time.Durat
 	})
 	defer reader.Close()
 
-	k.l.Info("Created dedicated reader for inventory response", "product_id", productID, "brokers", brokers)
+	k.l.Info("Created dedicated reader for inventory response", "order_id", orderID, "product_id", productID, "brokers", brokers)
 
 	// Read messages until we find a match or context is canceled
 	for {
 		select {
 		case <-ctx.Done():
-			k.l.Error("Context deadline exceeded while waiting for inventory response", "product_id", productID)
+			k.l.Error("Context deadline exceeded while waiting for inventory response", "order_id", orderID, "product_id", productID)
 			return fmt.Errorf("timeout waiting for inventory response: %w", ctx.Err())
 		default:
 			// Read message with a shorter timeout to allow for more frequent checking of context
@@ -194,8 +133,9 @@ func (k *KafkaClient) WaitForInventoryResponse(productID int, timeout time.Durat
 			k.l.Info("Received message from Kafka", "key", string(msg.Key), "value_length", len(msg.Value))
 
 			// Check if this is the response we're looking for
-			if string(msg.Key) == fmt.Sprintf("%d", productID) {
-				k.l.Info("Found matching response for product", "product_id", productID)
+			expectedKey := fmt.Sprintf("%d-%d", orderID, productID)
+			if string(msg.Key) == expectedKey {
+				k.l.Info("Found matching response", "order_id", orderID, "product_id", productID)
 				var response model.InventoryResponse
 				if err := json.Unmarshal(msg.Value, &response); err != nil {
 					k.l.Error("Failed to unmarshal response", "error", err)
@@ -203,14 +143,14 @@ func (k *KafkaClient) WaitForInventoryResponse(productID int, timeout time.Durat
 				}
 
 				if !response.Success {
-					k.l.Error("Inventory operation failed", "product_id", productID, "error", response.Error)
+					k.l.Error("Inventory operation failed", "order_id", orderID, "product_id", productID, "error", response.Error)
 					return fmt.Errorf("inventory operation failed: %s", response.Error)
 				}
 
-				k.l.Info("Received successful inventory response", "product_id", productID)
+				k.l.Info("Received successful inventory response", "order_id", orderID, "product_id", productID)
 				return nil
 			} else {
-				k.l.Info("Received response for different product", "expected", productID, "received", string(msg.Key))
+				k.l.Info("Received response for different key", "expected", expectedKey, "received", string(msg.Key))
 			}
 		}
 	}

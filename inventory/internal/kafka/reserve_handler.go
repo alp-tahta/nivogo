@@ -93,15 +93,14 @@ func (h *ReserveInventoryHandler) handleMessages(ctx context.Context) {
 
 			h.l.Info("Received reserve inventory request", "key", string(msg.Key), "value_length", len(msg.Value))
 
-			// Parse product ID from key
-			productID := 0
-			fmt.Sscanf(string(msg.Key), "%d", &productID)
-
 			// Parse request
 			var request model.ReserveInventoryRequest
+			productID := request.ProductID
+			orderID := request.OrderID
+
 			if err := json.Unmarshal(msg.Value, &request); err != nil {
 				h.l.Error("failed to unmarshal request", "error", err)
-				h.sendResponse(productID, false, "failed to unmarshal request")
+				h.sendResponse(orderID, productID, false, "failed to unmarshal request")
 				continue
 			}
 
@@ -111,13 +110,13 @@ func (h *ReserveInventoryHandler) handleMessages(ctx context.Context) {
 			quantity, err := h.r.GetQuantityOfAProduct(productID)
 			if err != nil {
 				h.l.Error("failed to get quantity of product", "error", err, "product_id", productID)
-				h.sendResponse(productID, false, fmt.Sprintf("failed to get quantity of product: %v", err))
+				h.sendResponse(orderID, productID, false, fmt.Sprintf("failed to get quantity of product: %v", err))
 				continue
 			}
 
 			if quantity.Quantity < request.Quantity {
 				h.l.Error("not enough quantity available", "product_id", productID, "available", quantity.Quantity, "requested", request.Quantity)
-				h.sendResponse(productID, false, "not enough quantity available")
+				h.sendResponse(orderID, productID, false, "not enough quantity available")
 				continue
 			}
 
@@ -127,13 +126,13 @@ func (h *ReserveInventoryHandler) handleMessages(ctx context.Context) {
 			err = h.r.UpdateQuantityOfAProduct(productID, quantity.Quantity)
 			if err != nil {
 				h.l.Error("failed to reserve inventory", "error", err, "product_id", productID)
-				h.sendResponse(productID, false, fmt.Sprintf("failed to reserve inventory: %v", err))
+				h.sendResponse(orderID, productID, false, fmt.Sprintf("failed to reserve inventory: %v", err))
 				continue
 			}
 
 			// Send success response
 			h.l.Info("Sending success response for reserve inventory", "product_id", productID)
-			h.sendResponse(productID, true, "")
+			h.sendResponse(orderID, productID, true, "")
 		}
 	}
 }

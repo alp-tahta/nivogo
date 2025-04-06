@@ -76,13 +76,13 @@ func (s *Service) CreateOrder(order model.CreateOrder) (int, error) {
 			return orderID, fmt.Errorf("invalid quantity for product %d", item.Product.ID)
 		}
 
-		if err := s.reserveInventory(item.Product.ID, item.Quantity); err != nil {
+		if err := s.reserveInventory(orderID, item.Product.ID, item.Quantity); err != nil {
 			// Compensating transaction: Release all previously reserved inventory
 			for _, releasedItem := range order.Items {
 				if releasedItem.Product.ID == item.Product.ID {
 					break // Skip the current item as it wasn't reserved
 				}
-				s.releaseInventory(releasedItem.Product.ID, releasedItem.Quantity)
+				s.releaseInventory(orderID, releasedItem.Product.ID, releasedItem.Quantity)
 			}
 			s.r.UpdateSagaStatus(saga.OrderID, "FAILED")
 			return orderID, fmt.Errorf("failed to reserve inventory for product %d: %w", item.Product.ID, err)
@@ -97,7 +97,7 @@ func (s *Service) CreateOrder(order model.CreateOrder) (int, error) {
 	if err != nil {
 		// Compensating transaction: Release all inventory
 		for _, item := range order.Items {
-			s.releaseInventory(item.Product.ID, item.Quantity)
+			s.releaseInventory(orderID, item.Product.ID, item.Quantity)
 		}
 		s.r.UpdateSagaStatus(saga.OrderID, "FAILED")
 		return orderID, fmt.Errorf("failed to create order items: %w", err)
@@ -132,9 +132,9 @@ func (s *Service) GetOrders() ([]model.Order, error) {
 	return orders, nil
 }
 
-func (s *Service) reserveInventory(productID int, quantity int) error {
+func (s *Service) reserveInventory(orderID int, productID int, quantity int) error {
 	// Send reserve inventory request via Kafka
-	err := s.k.ReserveInventory(productID, quantity)
+	err := s.k.ReserveInventory(orderID, productID, quantity)
 	if err != nil {
 		return fmt.Errorf("failed to send reserve inventory request: %w", err)
 	}
@@ -142,9 +142,9 @@ func (s *Service) reserveInventory(productID int, quantity int) error {
 	return nil
 }
 
-func (s *Service) releaseInventory(productID int, quantity int) error {
+func (s *Service) releaseInventory(orderID int, productID int, quantity int) error {
 	// Send release inventory request via Kafka
-	err := s.k.ReleaseInventory(productID, quantity)
+	err := s.k.ReleaseInventory(orderID, productID, quantity)
 	if err != nil {
 		return fmt.Errorf("failed to send release inventory request: %w", err)
 	}

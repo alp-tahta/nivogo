@@ -65,7 +65,7 @@ func main() {
 	}
 
 	// Initialize Kafka client
-	kafkaClient, err := kafka.New(logger)
+	kafkaClient, err := kafka.New(logger, repository)
 	if err != nil {
 		logger.Error("Failed to create Kafka client", "error", err)
 		os.Exit(1)

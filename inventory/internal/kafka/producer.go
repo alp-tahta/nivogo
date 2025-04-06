@@ -21,10 +21,11 @@ type BaseHandler struct {
 }
 
 // sendResponse sends a response to Kafka with retry logic
-func (h *BaseHandler) sendResponse(productID int, success bool, errorMsg string) {
-	h.l.Info("Preparing to send inventory response", "product_id", productID, "success", success)
+func (h *BaseHandler) sendResponse(orderID int, productID int, success bool, errorMsg string) {
+	h.l.Info("Preparing to send inventory response", "order_id", orderID, "product_id", productID, "success", success)
 
 	response := model.InventoryResponse{
+		OrderID:   orderID,
 		ProductID: productID,
 		Success:   success,
 		Error:     errorMsg,
